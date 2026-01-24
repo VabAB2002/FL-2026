@@ -1,0 +1,135 @@
+# SEC 10-K Data Pipeline Configuration
+# =====================================
+
+# Target companies for data extraction (Expanded: 20 companies)
+companies:
+  # Original 10 companies
+  - cik: "0000320193"
+    name: "Apple Inc"
+    ticker: "AAPL"
+  - cik: "0001018724"
+    name: "Amazon.com Inc"
+    ticker: "AMZN"
+  - cik: "0001652044"
+    name: "Alphabet Inc"
+    ticker: "GOOGL"
+  - cik: "0000789019"
+    name: "Microsoft Corporation"
+    ticker: "MSFT"
+  - cik: "0001326801"
+    name: "Meta Platforms Inc"
+    ticker: "META"
+  - cik: "0001318605"
+    name: "Tesla Inc"
+    ticker: "TSLA"
+  - cik: "0001045810"
+    name: "NVIDIA Corporation"
+    ticker: "NVDA"
+  - cik: "0001067983"
+    name: "Berkshire Hathaway Inc"
+    ticker: "BRK-B"
+  - cik: "0000019617"
+    name: "JPMorgan Chase & Co"
+    ticker: "JPM"
+  - cik: "0000051143"
+    name: "International Business Machines Corporation"
+    ticker: "IBM"
+  
+  # Added 10 new companies - Technology (4)
+  - cik: "0001341439"
+    name: "Oracle Corporation"
+    ticker: "ORCL"
+  - cik: "0000858877"
+    name: "Cisco Systems Inc"
+    ticker: "CSCO"
+  - cik: "0000050863"
+    name: "Intel Corporation"
+    ticker: "INTC"
+  - cik: "0000002488"
+    name: "Advanced Micro Devices Inc"
+    ticker: "AMD"
+  
+  # Added 10 new companies - Financial Services (3)
+  - cik: "0000070858"
+    name: "Bank of America Corp"
+    ticker: "BAC"
+  - cik: "0000072971"
+    name: "Wells Fargo & Company"
+    ticker: "WFC"
+  - cik: "0000886982"
+    name: "Goldman Sachs Group Inc"
+    ticker: "GS"
+  
+  # Added 10 new companies - Consumer/Retail (3)
+  - cik: "0000104169"
+    name: "Walmart Inc"
+    ticker: "WMT"
+  - cik: "0000354950"
+    name: "Home Depot Inc"
+    ticker: "HD"
+  - cik: "0001744489"
+    name: "Walt Disney Company"
+    ticker: "DIS"
+
+# Data extraction settings
+extraction:
+  # Form types to extract (MVP: 10-K only)
+  form_types:
+    - "10-K"
+  
+  # Historical date range (10 years)
+  start_year: 2014
+  end_year: 2024
+  
+  # Sections to extract from 10-K
+  sections:
+    - item_1      # Business
+    - item_1a     # Risk Factors
+    - item_7      # MD&A
+    - item_8      # Financial Statements
+    - item_9a     # Controls and Procedures
+
+# SEC API settings
+sec_api:
+  base_url: "https://www.sec.gov"
+  edgar_base_url: "https://www.sec.gov/cgi-bin/browse-edgar"
+  submissions_url: "https://data.sec.gov/submissions"
+  # Rate limiting (SEC allows max 10 req/sec, we use 8 for safety)
+  rate_limit_per_second: 8
+  # Delay between requests in seconds (conservative approach)
+  request_delay: 0.15
+  # Maximum retries for failed requests
+  max_retries: 3
+  # Retry delay base (exponential backoff)
+  retry_delay_base: 2.0
+
+# Storage settings
+storage:
+  # Local paths (relative to project root)
+  raw_data_path: "data/raw"
+  processed_data_path: "data/processed"
+  database_path: "data/database/finloom.duckdb"
+  
+  # S3 backup settings
+  s3:
+    bucket_name: "finloom-sec-data"
+    raw_prefix: "raw/"
+    processed_prefix: "processed/"
+    database_prefix: "database/"
+
+# Processing settings
+processing:
+  # Number of worker threads for parallel processing
+  max_workers: 4
+  # Batch size for database operations
+  batch_size: 100
+  # Enable checkpointing for resume capability
+  enable_checkpoints: true
+  checkpoint_path: "data/checkpoints"
+
+# Logging settings
+logging:
+  level: "INFO"
+  log_path: "logs"
+  max_log_files: 30
+  log_format: "json"  # json or text

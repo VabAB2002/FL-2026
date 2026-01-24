@@ -1,0 +1,77 @@
+# Logging Configuration
+# =====================
+
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+  
+  json:
+    class: src.utils.logger.JsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+  
+  file_main:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: logs/finloom.log
+    maxBytes: 10485760  # 10MB
+    backupCount: 30
+    encoding: utf-8
+  
+  file_ingestion:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: logs/ingestion.log
+    maxBytes: 10485760
+    backupCount: 30
+    encoding: utf-8
+  
+  file_parsing:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: logs/parsing.log
+    maxBytes: 10485760
+    backupCount: 30
+    encoding: utf-8
+  
+  file_errors:
+    class: logging.handlers.RotatingFileHandler
+    level: ERROR
+    formatter: json
+    filename: logs/errors.log
+    maxBytes: 10485760
+    backupCount: 30
+    encoding: utf-8
+
+loggers:
+  finloom:
+    level: DEBUG
+    handlers: [console, file_main]
+    propagate: false
+  
+  finloom.ingestion:
+    level: DEBUG
+    handlers: [console, file_ingestion]
+    propagate: false
+  
+  finloom.parsing:
+    level: DEBUG
+    handlers: [console, file_parsing]
+    propagate: false
+
+root:
+  level: INFO
+  handlers: [console, file_main, file_errors]
