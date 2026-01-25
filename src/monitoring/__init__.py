@@ -164,6 +164,53 @@ duplicate_records = Gauge(
 )
 
 # =============================================================================
+# Unstructured Data Extraction Metrics
+# =============================================================================
+
+unstructured_sections_extracted = Counter(
+    'finloom_unstructured_sections_extracted_total',
+    'Total sections extracted from filings',
+    ['accession']
+)
+
+unstructured_tables_extracted = Counter(
+    'finloom_unstructured_tables_extracted_total',
+    'Total tables extracted from filings',
+    ['accession']
+)
+
+unstructured_footnotes_extracted = Counter(
+    'finloom_unstructured_footnotes_extracted_total',
+    'Total footnotes extracted from filings',
+    ['accession']
+)
+
+unstructured_chunks_created = Counter(
+    'finloom_unstructured_chunks_created_total',
+    'Total semantic chunks created for RAG',
+    ['accession']
+)
+
+unstructured_quality_score = Gauge(
+    'finloom_unstructured_quality_score',
+    'Unstructured data extraction quality score (0-100)',
+    ['accession']
+)
+
+unstructured_extraction_errors = Counter(
+    'finloom_unstructured_extraction_errors_total',
+    'Errors during unstructured extraction',
+    ['type', 'accession']
+)
+
+unstructured_processing_time = Histogram(
+    'finloom_unstructured_processing_time_seconds',
+    'Time to process unstructured data for filing',
+    ['accession'],
+    buckets=(1, 5, 10, 30, 60, 120, 300)
+)
+
+# =============================================================================
 # System Info
 # =============================================================================
 
@@ -323,3 +370,38 @@ def record_circuit_breaker_state(name: str, state: str) -> None:
     }.get(state, -1)
     
     circuit_breaker_state.labels(name=name).set(state_value)
+
+
+# =============================================================================
+# Health Checker Exports
+# =============================================================================
+
+from .health_checker import (
+    DatabaseHealthChecker,
+    DuplicateReport,
+    IntegrityReport,
+    CompletenessReport,
+    HealthReport,
+)
+
+__all__ = [
+    # Metrics
+    'filings_downloaded',
+    'filings_processed',
+    'facts_extracted',
+    'database_size_bytes',
+    'pipeline_errors',
+    'duplicate_records',
+    # Functions
+    'track_operation',
+    'track_api_call',
+    'start_metrics_server',
+    'update_database_size',
+    'record_circuit_breaker_state',
+    # Health checker
+    'DatabaseHealthChecker',
+    'DuplicateReport',
+    'IntegrityReport',
+    'CompletenessReport',
+    'HealthReport',
+]

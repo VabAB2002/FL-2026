@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional
 
+from ..core.exceptions import XBRLParsingError
 from ..utils.config import get_settings
 from ..utils.logger import get_logger
 
@@ -211,10 +212,10 @@ class XBRLParser:
             
         except ImportError as e:
             logger.error(f"Failed to import Arelle: {e}")
-            raise
-        except Exception as e:
+            raise XBRLParsingError(f"Arelle library not available: {e}") from e
+        except (OSError, ValueError) as e:
             logger.error(f"Failed to load XBRL with Arelle: {e}")
-            raise
+            raise XBRLParsingError(f"Failed to load XBRL file: {e}") from e
     
     def parse_filing(
         self,
@@ -305,14 +306,34 @@ class XBRLParser:
                 parse_time_ms=elapsed_ms,
             )
             
-        except Exception as e:
+        except XBRLParsingError as e:
             elapsed_ms = (time.time() - start_time) * 1000
-            logger.error(f"Failed to parse XBRL for {accession_number}: {e}")
-            
+            logger.warning(f"XBRL parsing failed for {accession_number}: {e}")
+
             return XBRLParseResult(
                 success=False,
                 accession_number=accession_number,
                 error_message=str(e),
+                parse_time_ms=elapsed_ms,
+            )
+        except (OSError, ValueError, AttributeError) as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.warning(f"Failed to parse XBRL for {accession_number}: {e}")
+
+            return XBRLParseResult(
+                success=False,
+                accession_number=accession_number,
+                error_message=str(e),
+                parse_time_ms=elapsed_ms,
+            )
+        except Exception as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"Unexpected error parsing XBRL for {accession_number}: {type(e).__name__}: {e}")
+
+            return XBRLParseResult(
+                success=False,
+                accession_number=accession_number,
+                error_message=f"Unexpected error: {type(e).__name__}: {e}",
                 parse_time_ms=elapsed_ms,
             )
     
@@ -372,7 +393,8 @@ class XBRLParser:
                 ]
                 
                 return any(indicator in content for indicator in xbrl_indicators)
-        except Exception:
+        except (OSError, UnicodeDecodeError):
+            # File read issues - assume not XBRL
             return False
     
     def _parse_with_arelle(self, xbrl_file: Path) -> list[XBRLFact]:
@@ -395,11 +417,11 @@ class XBRLParser:
             else:
                 logger.warning("Model has no facts")
         finally:
-            # Clean up
+            # Clean up - ignore errors during cleanup
             try:
                 model_xbrl.close()
-            except Exception as e:
-                logger.debug(f"Error closing model: {e}")
+            except (AttributeError, RuntimeError) as e:
+                logger.debug(f"Error closing model (non-critical): {e}")
         
         return facts
     
@@ -486,10 +508,15 @@ class XBRLParser:
                 is_custom=is_custom,
             )
             
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError) as e:
+            # Expected issues with malformed fact data
             logger.debug(f"Failed to extract fact: {e}")
             return None
-    
+        except Exception as e:
+            # Unexpected error - log for investigation
+            logger.debug(f"Unexpected error extracting fact: {type(e).__name__}: {e}")
+            return None
+
     def _get_namespace_prefix(self, namespace: str) -> str:
         """Get standard prefix for namespace."""
         prefix_map = {
@@ -590,9 +617,14 @@ class XBRLParser:
             
             logger.debug(f"Parsed {len(hierarchy)} concepts from presentation linkbase")
             return hierarchy
-            
-        except Exception as e:
+
+        except (OSError, ValueError, KeyError, AttributeError) as e:
+            # Expected issues with malformed linkbase files
             logger.warning(f"Failed to parse presentation linkbase: {e}")
+            return {}
+        except Exception as e:
+            # Unexpected error
+            logger.warning(f"Unexpected error parsing presentation linkbase: {type(e).__name__}: {e}")
             return {}
     
     def _extract_section_from_role(self, role: str) -> str:
@@ -715,9 +747,14 @@ class XBRLParser:
             
             logger.debug(f"Parsed {len(labels)} labels from label linkbase")
             return labels
-            
-        except Exception as e:
+
+        except (OSError, ValueError, KeyError, AttributeError) as e:
+            # Expected issues with malformed linkbase files
             logger.warning(f"Failed to parse label linkbase: {e}")
+            return {}
+        except Exception as e:
+            # Unexpected error
+            logger.warning(f"Unexpected error parsing label linkbase: {type(e).__name__}: {e}")
             return {}
     
     def find_linkbase_files(self, filing_path: Path) -> tuple:

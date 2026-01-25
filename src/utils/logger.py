@@ -99,7 +99,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
             "module": record.module,
-            "function": record.funcFunc,
+            "function": record.funcName,
             "line": record.lineno,
             "correlation_id": getattr(record, 'correlation_id', 'none'),
             "request_id": getattr(record, 'request_id', 'none'),

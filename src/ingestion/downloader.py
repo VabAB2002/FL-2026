@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 import requests
 
+from ..core.exceptions import DownloadError, IngestionError
 from ..utils.config import get_absolute_path, get_env_settings, get_settings
 from ..utils.logger import get_logger
 from ..utils.rate_limiter import get_rate_limiter
@@ -215,7 +216,8 @@ class SECDownloader:
                     bytes_downloaded = self._download_file(doc_url, local_file)
                     downloaded_files.append(doc["name"])
                     total_bytes += bytes_downloaded
-                except Exception as e:
+                except (requests.RequestException, OSError) as e:
+                    # Network or file system error - log and continue with other files
                     logger.warning(f"Failed to download {doc['name']}: {e}")
             
             elapsed_ms = (time.time() - start_time) * 1000
@@ -235,15 +237,28 @@ class SECDownloader:
                 total_bytes=total_bytes,
             )
             
-        except Exception as e:
+        except (requests.RequestException, OSError, SECApiError) as e:
+            # Expected download failures
             elapsed_ms = (time.time() - start_time) * 1000
-            logger.error(f"Failed to download filing {filing.accession_number}: {e}")
-            
+            logger.warning(f"Failed to download filing {filing.accession_number}: {e}")
+
             return DownloadResult(
                 success=False,
                 accession_number=filing.accession_number,
                 cik=filing.cik,
                 error_message=str(e),
+                download_time_ms=elapsed_ms,
+            )
+        except Exception as e:
+            # Unexpected error
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"Unexpected error downloading {filing.accession_number}: {type(e).__name__}: {e}")
+
+            return DownloadResult(
+                success=False,
+                accession_number=filing.accession_number,
+                cik=filing.cik,
+                error_message=f"Unexpected error: {type(e).__name__}: {e}",
                 download_time_ms=elapsed_ms,
             )
     
@@ -515,8 +530,9 @@ class SECDownloader:
                 with open(checkpoint_path) as f:
                     data = json.load(f)
                 return DownloadCheckpoint.from_dict(data)
-            except Exception as e:
-                logger.warning(f"Failed to load checkpoint: {e}")
+            except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+                # Corrupted or invalid checkpoint file - start fresh
+                logger.warning(f"Failed to load checkpoint (will start fresh): {e}")
         
         return None
     

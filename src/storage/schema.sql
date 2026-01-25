@@ -146,6 +146,27 @@ CREATE TABLE IF NOT EXISTS sections (
     extraction_confidence DECIMAL(5, 4),    -- 0.0 to 1.0
     extraction_method VARCHAR,              -- regex, dom, ml, etc.
     
+    -- NEW: Hierarchy metadata
+    section_part VARCHAR,                   -- "Part I", "Part II", "Part III", "Part IV"
+    parent_section_id INTEGER,
+    subsections JSON,                        -- {1: "Overview", 2: "Products"}
+    
+    -- NEW: Content composition
+    contains_tables INTEGER DEFAULT 0,
+    contains_lists INTEGER DEFAULT 0,
+    contains_footnotes INTEGER DEFAULT 0,
+    
+    -- NEW: Cross-references
+    cross_references JSON,                   -- [{"target": "Item 7", "text": "See Item 7"}]
+    
+    -- NEW: Structure
+    page_numbers JSON,                       -- {"start": 10, "end": 25}
+    heading_hierarchy JSON,                  -- ["Business", "Products", "iPhone"]
+    
+    -- NEW: Quality metadata
+    extraction_quality DECIMAL(5, 4),       -- 0.0 to 1.0 quality score
+    extraction_issues JSON,                 -- List of issues found
+    
     -- For future chunking/embedding
     chunk_count INTEGER,
     s3_chunks_path VARCHAR,
@@ -156,6 +177,7 @@ CREATE TABLE IF NOT EXISTS sections (
 -- Indexes for section queries
 CREATE INDEX IF NOT EXISTS idx_sections_accession ON sections(accession_number);
 CREATE INDEX IF NOT EXISTS idx_sections_type ON sections(section_type);
+CREATE INDEX IF NOT EXISTS idx_sections_part ON sections(section_part);
 
 -- Sequence for sections ID
 CREATE SEQUENCE IF NOT EXISTS sections_id_seq START 1;
@@ -189,6 +211,72 @@ CREATE INDEX IF NOT EXISTS idx_tables_section ON tables(section_id);
 
 -- Sequence for tables ID
 CREATE SEQUENCE IF NOT EXISTS tables_id_seq START 1;
+
+-- Footnotes: Extracted footnotes and cross-references
+CREATE TABLE IF NOT EXISTS footnotes (
+    footnote_id VARCHAR PRIMARY KEY,
+    accession_number VARCHAR NOT NULL,
+    section_id INTEGER,
+    table_id INTEGER,
+    
+    marker VARCHAR,
+    footnote_text TEXT NOT NULL,
+    footnote_type VARCHAR,
+    
+    ref_links JSON,
+    referenced_by JSON,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (accession_number) REFERENCES filings(accession_number),
+    FOREIGN KEY (section_id) REFERENCES sections(id),
+    FOREIGN KEY (table_id) REFERENCES tables(id)
+);
+
+-- Indexes for footnotes queries
+CREATE INDEX IF NOT EXISTS idx_footnotes_accession ON footnotes(accession_number);
+CREATE INDEX IF NOT EXISTS idx_footnotes_section ON footnotes(section_id);
+CREATE INDEX IF NOT EXISTS idx_footnotes_table ON footnotes(table_id);
+
+-- Chunks: Semantic chunks for RAG
+CREATE TABLE IF NOT EXISTS chunks (
+    chunk_id VARCHAR PRIMARY KEY,
+    accession_number VARCHAR NOT NULL,
+    section_id INTEGER,
+    parent_chunk_id VARCHAR,
+    
+    chunk_level INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    chunk_text TEXT NOT NULL,
+    chunk_markdown TEXT,
+    
+    token_count INTEGER,
+    char_start INTEGER,
+    char_end INTEGER,
+    
+    heading VARCHAR,
+    section_type VARCHAR,
+    contains_tables BOOLEAN DEFAULT FALSE,
+    contains_lists BOOLEAN DEFAULT FALSE,
+    contains_numbers BOOLEAN DEFAULT FALSE,
+    
+    cross_references JSON,
+    
+    s3_path VARCHAR,
+    embedding_vector FLOAT[],
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (accession_number) REFERENCES filings(accession_number),
+    FOREIGN KEY (section_id) REFERENCES sections(id)
+);
+
+-- Indexes for chunks queries
+CREATE INDEX IF NOT EXISTS idx_chunks_accession ON chunks(accession_number);
+CREATE INDEX IF NOT EXISTS idx_chunks_section ON chunks(section_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_level ON chunks(chunk_level);
+CREATE INDEX IF NOT EXISTS idx_chunks_parent ON chunks(parent_chunk_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_section_type ON chunks(section_type);
 
 -- Processing logs: Track pipeline operations
 CREATE TABLE IF NOT EXISTS processing_logs (
