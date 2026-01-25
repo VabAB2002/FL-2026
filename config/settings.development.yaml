@@ -1,0 +1,31 @@
+# Development Environment Configuration
+# Overrides base settings.yaml for development
+
+logging:
+  level: DEBUG
+
+sec_api:
+  rate_limit: 5.0  # Slower for debugging
+  timeout: 60      # Longer timeout for debugging
+
+storage:
+  database_path: data/finloom.dev.duckdb
+  s3:
+    enabled: false  # No S3 in dev
+
+database:
+  pool_size: 2
+  wal_enabled: true
+
+monitoring:
+  metrics_enabled: true
+  metrics_port: 9090
+  health_port: 8000
+  alerts_enabled: false  # No alerts in dev
+
+features:
+  async_downloads: false  # Easier to debug synchronously
+  section_extraction: true
+  table_extraction: false
+  sentiment_analysis: false
+  caching_enabled: false

@@ -1,0 +1,33 @@
+# Staging Environment Configuration
+# Overrides base settings.yaml for staging
+
+logging:
+  level: INFO
+
+sec_api:
+  rate_limit: 7.0
+  timeout: 30
+
+storage:
+  database_path: data/finloom.staging.duckdb
+  s3:
+    enabled: true
+    region: us-east-1
+
+database:
+  pool_size: 5
+  timeout: 30
+  wal_enabled: true
+
+monitoring:
+  metrics_enabled: true
+  metrics_port: 9090
+  health_port: 8000
+  alerts_enabled: true
+
+features:
+  async_downloads: true
+  section_extraction: true
+  table_extraction: false
+  sentiment_analysis: false
+  caching_enabled: true
