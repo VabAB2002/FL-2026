@@ -19,8 +19,24 @@ pandas>=2.2.0
 pyarrow>=15.0.0
 tabulate>=0.9.0
 
+# Monitoring & Observability
+prometheus-client>=0.19.0
+opentelemetry-api>=1.22.0
+opentelemetry-sdk>=1.22.0
+opentelemetry-exporter-jaeger>=1.22.0
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# Async & Performance
+aiohttp>=3.9.0
+aiodns>=3.1.0
+redis>=5.0.1
+hiredis>=2.3.2
+
 # Development
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 black>=24.1.0
 ruff>=0.1.0
+pytest-benchmark>=4.0.0
+locust>=2.20.0  # Load testing

@@ -1,7 +1,7 @@
 """
 Logging setup for FinLoom SEC Data Pipeline.
 
-Provides structured JSON logging and standard logging configuration.
+Provides structured JSON logging with correlation IDs and standard logging configuration.
 """
 
 import json
@@ -9,6 +9,8 @@ import logging
 import logging.config
 import logging.handlers
 import sys
+import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -17,12 +19,76 @@ import yaml
 
 from .config import get_project_root, get_settings
 
+# Thread-safe correlation ID storage
+correlation_id: ContextVar[str] = ContextVar('correlation_id', default=None)
+request_id: ContextVar[str] = ContextVar('request_id', default=None)
+
+
+class CorrelationIdFilter(logging.Filter):
+    """
+    Filter that adds correlation ID to log records.
+    
+    Correlation IDs help trace requests across the system.
+    """
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Add correlation ID to record."""
+        record.correlation_id = correlation_id.get() or 'none'
+        record.request_id = request_id.get() or 'none'
+        return True
+
+
+def set_correlation_id(cid: Optional[str] = None) -> str:
+    """
+    Set correlation ID for current context.
+    
+    Args:
+        cid: Correlation ID. If None, generates a new UUID.
+    
+    Returns:
+        The correlation ID that was set.
+    """
+    new_id = cid or str(uuid.uuid4())
+    correlation_id.set(new_id)
+    return new_id
+
+
+def get_correlation_id() -> Optional[str]:
+    """Get current correlation ID."""
+    return correlation_id.get()
+
+
+def set_request_id(rid: Optional[str] = None) -> str:
+    """
+    Set request ID for current context.
+    
+    Args:
+        rid: Request ID. If None, generates a new UUID.
+    
+    Returns:
+        The request ID that was set.
+    """
+    new_id = rid or str(uuid.uuid4())
+    request_id.set(new_id)
+    return new_id
+
+
+def get_request_id() -> Optional[str]:
+    """Get current request ID."""
+    return request_id.get()
+
+
+def clear_context() -> None:
+    """Clear correlation and request IDs."""
+    correlation_id.set(None)
+    request_id.set(None)
+
 
 class JsonFormatter(logging.Formatter):
     """
-    JSON log formatter for structured logging.
+    Enhanced JSON log formatter for structured logging.
     
-    Outputs log records as JSON objects for easy parsing and analysis.
+    Outputs log records as JSON objects with correlation IDs for easy parsing and tracing.
     """
     
     def format(self, record: logging.LogRecord) -> str:
@@ -33,13 +99,29 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
             "module": record.module,
-            "function": record.funcName,
+            "function": record.funcFunc,
             "line": record.lineno,
+            "correlation_id": getattr(record, 'correlation_id', 'none'),
+            "request_id": getattr(record, 'request_id', 'none'),
         }
+        
+        # Add OpenTelemetry trace context if available
+        try:
+            from opentelemetry import trace
+            span = trace.get_current_span()
+            if span and span.get_span_context().is_valid:
+                ctx = span.get_span_context()
+                log_data["trace_id"] = format(ctx.trace_id, '032x')
+                log_data["span_id"] = format(ctx.span_id, '016x')
+        except ImportError:
+            pass  # OpenTelemetry not installed
+        except Exception:
+            pass  # Ignore tracing errors
         
         # Add exception info if present
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
+            log_data["exception_type"] = record.exc_info[0].__name__ if record.exc_info[0] else None
         
         # Add extra fields
         if hasattr(record, "extra_fields"):
@@ -105,10 +187,24 @@ def setup_logging(
                 if not Path(filename).is_absolute():
                     handler_config["filename"] = str(project_root / filename)
         
+        # Add correlation ID filter to all handlers
+        for handler_name in config.get("handlers", {}).keys():
+            if "filters" not in config["handlers"][handler_name]:
+                config["handlers"][handler_name]["filters"] = []
+            if "correlation_id" not in config["handlers"][handler_name]["filters"]:
+                config["handlers"][handler_name]["filters"].append("correlation_id")
+        
+        # Add correlation ID filter definition
+        if "filters" not in config:
+            config["filters"] = {}
+        config["filters"]["correlation_id"] = {
+            "()": "src.utils.logger.CorrelationIdFilter"
+        }
+        
         # Apply config
         logging.config.dictConfig(config)
     else:
-        # Fallback to basic config
+        # Fallback to basic config with correlation IDs
         _setup_basic_logging(log_level or "INFO")
     
     # Override log level if specified
@@ -122,12 +218,16 @@ def _setup_basic_logging(level: str) -> None:
     logs_dir = project_root / "logs"
     logs_dir.mkdir(exist_ok=True)
     
+    # Create correlation ID filter
+    correlation_filter = CorrelationIdFilter()
+    
     # Create handlers
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s")
     )
+    console_handler.addFilter(correlation_filter)
     
     file_handler = logging.handlers.RotatingFileHandler(
         logs_dir / "finloom.log",
@@ -137,6 +237,7 @@ def _setup_basic_logging(level: str) -> None:
     )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(JsonFormatter())
+    file_handler.addFilter(correlation_filter)
     
     # Configure root logger
     root_logger = logging.getLogger()

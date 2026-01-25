@@ -76,7 +76,22 @@ class Database:
         Initialize database schema from SQL file.
         
         Creates all tables, indexes, and views if they don't exist.
+        Enables WAL mode for crash recovery and better concurrency.
         """
+        # Enable Write-Ahead Logging (WAL) for crash recovery
+        try:
+            self.connection.execute("PRAGMA wal_autocheckpoint=1000")
+            logger.info("Enabled WAL auto-checkpoint at 1000 pages")
+        except Exception as e:
+            logger.warning(f"Could not set WAL auto-checkpoint: {e}")
+        
+        try:
+            # Enable WAL mode for better crash recovery
+            result = self.connection.execute("PRAGMA journal_mode=WAL").fetchone()
+            logger.info(f"Set journal mode to WAL: {result}")
+        except Exception as e:
+            logger.warning(f"Could not enable WAL mode: {e}")
+        
         # Find schema file
         schema_path = Path(__file__).parent / "schema.sql"
         

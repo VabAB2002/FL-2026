@@ -227,6 +227,47 @@ CREATE INDEX IF NOT EXISTS idx_logs_created ON processing_logs(created_at);
 -- Sequence for logs ID
 CREATE SEQUENCE IF NOT EXISTS processing_logs_id_seq START 1;
 
+-- Audit log: Immutable log of all data modifications (for compliance)
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL,
+    
+    -- Who/What
+    user_id VARCHAR,
+    service_name VARCHAR DEFAULT 'finloom',
+    correlation_id VARCHAR,
+    
+    -- Action details
+    action VARCHAR NOT NULL,                -- SELECT, INSERT, UPDATE, DELETE
+    table_name VARCHAR NOT NULL,
+    record_id VARCHAR,
+    
+    -- Changes
+    old_value JSON,
+    new_value JSON,
+    
+    -- Context
+    ip_address VARCHAR,
+    user_agent VARCHAR,
+    query_text TEXT,
+    
+    -- Result
+    success BOOLEAN DEFAULT TRUE,
+    error_message TEXT,
+    
+    created_at TIMESTAMP
+);
+
+-- Indexes for audit queries (immutable table, append-only)
+CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_table ON audit_log(table_name);
+CREATE INDEX IF NOT EXISTS idx_audit_correlation ON audit_log(correlation_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+
+-- Sequence for audit log ID
+CREATE SEQUENCE IF NOT EXISTS audit_log_id_seq START 1;
+
 -- Data quality issues: Track validation failures
 CREATE TABLE IF NOT EXISTS data_quality_issues (
     id INTEGER PRIMARY KEY,
