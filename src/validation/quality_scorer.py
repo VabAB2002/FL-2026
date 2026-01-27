@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict, List, Optional
 
+from ..config.extraction_config import get_quality_scoring_config
 from ..storage.database import Database
 from ..utils.logger import get_logger
 
@@ -40,14 +41,16 @@ class DataQualityScorer:
         'us-gaap:CashAndCashEquivalentsAtCarryingValue',
     ]
     
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, config: Optional['QualityScoringConfig'] = None):
         """
         Initialize quality scorer.
         
         Args:
             db: Database instance.
+            config: Quality scoring configuration (uses default if not provided).
         """
         self.db = db
+        self.config = config or get_quality_scoring_config()
     
     def score_filing(self, accession_number: str) -> QualityScore:
         """
@@ -59,7 +62,7 @@ class DataQualityScorer:
         Returns:
             QualityScore object.
         """
-        score = 100.0
+        score = self.config.base_score
         issues = []
         metrics = {}
         
@@ -73,23 +76,23 @@ class DataQualityScorer:
         if not facts:
             return QualityScore(
                 score=0.0,
-                grade='F',
+                grade=self.config.score_to_grade(0.0),
                 issues=['No facts extracted'],
                 metrics={'fact_count': 0}
             )
         
         metrics['fact_count'] = len(facts)
         
-        # Check for required concepts
+        # Check for required concepts (use config helper)
         concepts = {f[0] for f in facts}
         missing_concepts = set(self.REQUIRED_CONCEPTS) - concepts
         if missing_concepts:
-            penalty = len(missing_concepts) * 10
+            penalty = self.config.calculate_missing_concepts_penalty(len(missing_concepts))
             score -= penalty
             issues.append(f"Missing {len(missing_concepts)} required concepts")
         metrics['concept_coverage'] = (len(concepts) / len(self.REQUIRED_CONCEPTS)) * 100
         
-        # Check balance sheet equation
+        # Check balance sheet equation (use config helper)
         assets = self._get_concept_value(facts, 'us-gaap:Assets')
         liabilities = self._get_concept_value(facts, 'us-gaap:Liabilities')
         equity = self._get_concept_value(facts, 'us-gaap:StockholdersEquity')
@@ -98,29 +101,30 @@ class DataQualityScorer:
             diff_pct = abs((assets - (liabilities + equity)) / assets) * 100
             metrics['balance_sheet_accuracy'] = max(0, 100 - diff_pct)
             
-            if diff_pct > 1.0:
-                penalty = min(diff_pct * 2, 20)
+            penalty = self.config.calculate_balance_sheet_penalty(diff_pct)
+            if penalty > 0:
                 score -= penalty
                 issues.append(f"Balance sheet imbalance: {diff_pct:.2f}%")
         else:
-            score -= 10
+            score -= self.config.incomplete_balance_penalty
             issues.append("Incomplete balance sheet data")
             metrics['balance_sheet_accuracy'] = 0
         
-        # Check for duplicate facts
+        # Check for duplicate facts (use config helper)
         duplicates = self._count_duplicates(facts)
         if duplicates > 0:
-            penalty = min(duplicates * 5, 20)
+            penalty = self.config.calculate_duplicate_penalty(duplicates)
             score -= penalty
             issues.append(f"Found {duplicates} duplicate facts")
         metrics['duplicate_count'] = duplicates
         
-        # Check for null values
+        # Check for null values (use config helper)
         null_values = sum(1 for f in facts if f[1] is None)
         if null_values > 0:
             null_pct = (null_values / len(facts)) * 100
-            if null_pct > 10:
-                score -= min(null_pct, 10)
+            penalty = self.config.calculate_null_value_penalty(null_pct)
+            if penalty > 0:
+                score -= penalty
                 issues.append(f"{null_pct:.1f}% of facts have null values")
         metrics['null_value_percent'] = (null_values / len(facts)) * 100 if facts else 0
         
@@ -132,9 +136,9 @@ class DataQualityScorer:
         if dimensional_pct > 50:
             issues.append(f"High dimensional complexity: {dimensional_pct:.1f}%")
         
-        # Final score
+        # Final score (clamp to 0-100)
         score = max(0.0, min(100.0, score))
-        grade = self._score_to_grade(score)
+        grade = self.config.score_to_grade(score)
         
         return QualityScore(
             score=round(score, 2),
@@ -233,15 +237,5 @@ class DataQualityScorer:
         
         return duplicates
     
-    def _score_to_grade(self, score: float) -> str:
-        """Convert numeric score to letter grade."""
-        if score >= 90:
-            return 'A'
-        elif score >= 80:
-            return 'B'
-        elif score >= 70:
-            return 'C'
-        elif score >= 60:
-            return 'D'
-        else:
-            return 'F'
+    # NOTE: _score_to_grade() method removed - now using config.score_to_grade()
+    # This allows for configurable grade thresholds

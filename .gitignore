@@ -63,3 +63,4 @@ htmlcov/
 !data/processed/.gitkeep
 !data/database/.gitkeep
 !logs/.gitkeep
+*.duckdb

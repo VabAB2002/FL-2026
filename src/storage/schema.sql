@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS filings (
     xbrl_processed BOOLEAN DEFAULT FALSE,
     sections_processed BOOLEAN DEFAULT FALSE,
     
+    -- Unstructured extraction (full markdown)
+    full_markdown TEXT,
+    markdown_word_count INTEGER,
+    
     -- Error tracking
     processing_errors JSON,
     
@@ -120,6 +124,11 @@ CREATE INDEX IF NOT EXISTS idx_facts_namespace ON facts(concept_namespace);
 CREATE INDEX IF NOT EXISTS idx_facts_section ON facts(section);
 CREATE INDEX IF NOT EXISTS idx_facts_label ON facts(label);
 
+-- UNIQUE constraint to prevent duplicate facts
+-- Same concept, period, and dimensions for a filing should be unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_unique 
+ON facts(accession_number, concept_name, period_end, COALESCE(dimensions::VARCHAR, 'NULL'));
+
 -- Sequence for facts ID (DuckDB doesn't have auto-increment)
 CREATE SEQUENCE IF NOT EXISTS facts_id_seq START 1;
 
@@ -136,6 +145,7 @@ CREATE TABLE IF NOT EXISTS sections (
     -- Content
     content_text TEXT,                      -- Clean text content
     content_html TEXT,                      -- Original HTML if preserved
+    content_markdown TEXT,                  -- Markdown content for RAG
     
     -- Metrics
     word_count INTEGER,

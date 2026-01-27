@@ -2,6 +2,10 @@
 Prometheus metrics exporter for FinLoom.
 
 Provides business and system metrics for monitoring and alerting.
+
+IMPORTANT: This module is imported by src.processing.unstructured_pipeline.
+DO NOT import anything from src.processing here to avoid circular dependencies.
+The correct pattern is: processing modules USE metrics defined here.
 """
 
 import time
@@ -185,11 +189,11 @@ unstructured_footnotes_extracted = Counter(
     ['accession']
 )
 
-unstructured_chunks_created = Counter(
-    'finloom_unstructured_chunks_created_total',
-    'Total semantic chunks created for RAG',
-    ['accession']
-)
+# unstructured_chunks_created = Counter(
+#     'finloom_unstructured_chunks_created_total',
+#     'Total semantic chunks created for RAG',
+#     ['accession']
+# )  # DISABLED: Chunking not implemented yet
 
 unstructured_quality_score = Gauge(
     'finloom_unstructured_quality_score',

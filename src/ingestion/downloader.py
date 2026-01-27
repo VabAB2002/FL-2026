@@ -38,6 +38,10 @@ class DownloadResult:
     error_message: Optional[str] = None
     download_time_ms: float = 0.0
     total_bytes: int = 0
+    # Filing metadata from SEC API
+    filing_date: Optional[Any] = None  # date object from FilingInfo
+    acceptance_datetime: Optional[Any] = None  # datetime object from FilingInfo
+    form_type: Optional[str] = None
 
 
 @dataclass
@@ -235,6 +239,9 @@ class SECDownloader:
                 files_downloaded=downloaded_files,
                 download_time_ms=elapsed_ms,
                 total_bytes=total_bytes,
+                filing_date=filing.filing_date,
+                acceptance_datetime=filing.acceptance_datetime,
+                form_type=filing.form_type,
             )
             
         except (requests.RequestException, OSError, SECApiError) as e:

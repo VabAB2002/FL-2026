@@ -3,16 +3,17 @@ Data processing and transformation layer.
 
 This module provides:
 - UnstructuredDataPipeline: Orchestrates section, table, and footnote extraction
-- SemanticChunker: Creates RAG-ready chunks from documents
 - ProcessingResult: Result container for pipeline operations
+
+Note: Chunking functionality is currently disabled and will be implemented later.
 """
 
-from .chunker import Chunk, SemanticChunker
+# from .chunker import Chunk, SemanticChunker  # DISABLED: Will implement later
 from .unstructured_pipeline import ProcessingResult, UnstructuredDataPipeline
 
 __all__ = [
     "UnstructuredDataPipeline",
     "ProcessingResult",
-    "SemanticChunker",
-    "Chunk",
+    # "SemanticChunker",  # DISABLED: Chunking not implemented yet
+    # "Chunk",            # DISABLED: Chunking not implemented yet
 ]

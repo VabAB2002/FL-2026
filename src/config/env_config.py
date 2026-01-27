@@ -271,3 +271,96 @@ def is_production() -> bool:
 def is_development() -> bool:
     """Check if running in development."""
     return get_env_config().is_development()
+
+
+def validate_environment_variables() -> List[str]:
+    """
+    Validate required environment variables at startup.
+    
+    Checks critical environment variables that must be set for the application
+    to function correctly. This prevents cryptic runtime errors.
+    
+    Returns:
+        List of validation error messages (empty if all valid).
+    
+    Example:
+        errors = validate_environment_variables()
+        if errors:
+            print("Configuration errors:")
+            for error in errors:
+                print(f"  - {error}")
+            sys.exit(1)
+    """
+    errors = []
+    config = get_env_config()
+    
+    # 1. SEC API User Agent (CRITICAL - required by SEC Edgar)
+    # Without this, SEC will block all requests with 403 Forbidden
+    user_agent = os.getenv('SEC_API_USER_AGENT')
+    if not user_agent:
+        errors.append(
+            "Missing SEC_API_USER_AGENT environment variable. "
+            "SEC requires identification. Format: 'CompanyName email@example.com'"
+        )
+    elif '@' not in user_agent or len(user_agent) < 10:
+        errors.append(
+            f"Invalid SEC_API_USER_AGENT: '{user_agent}'. "
+            "Must include company name and email address."
+        )
+    
+    # 2. Database path validation
+    db_path = config.get('storage.database_path')
+    if not db_path:
+        errors.append("Missing database path configuration (storage.database_path)")
+    else:
+        # Check if parent directory exists
+        db_parent = Path(db_path).parent
+        if not db_parent.exists():
+            errors.append(
+                f"Database directory does not exist: {db_parent}. "
+                f"Create it with: mkdir -p {db_parent}"
+            )
+    
+    # 3. Production-specific requirements
+    if config.is_production():
+        # AWS credentials for S3 backup
+        if not os.getenv('AWS_ACCESS_KEY_ID'):
+            errors.append(
+                "Production environment missing AWS_ACCESS_KEY_ID. "
+                "Required for S3 backups."
+            )
+        
+        if not os.getenv('AWS_SECRET_ACCESS_KEY'):
+            errors.append(
+                "Production environment missing AWS_SECRET_ACCESS_KEY. "
+                "Required for S3 backups."
+            )
+        
+        # S3 bucket configuration
+        if not config.get('storage.s3.bucket_name') and not os.getenv('FINLOOM_S3_BUCKET'):
+            errors.append(
+                "Production environment missing S3 bucket configuration. "
+                "Set FINLOOM_S3_BUCKET environment variable."
+            )
+        
+        # Monitoring requirements
+        if not config.get('monitoring.alerts_enabled'):
+            errors.append(
+                "Production environment should have monitoring alerts enabled. "
+                "Set monitoring.alerts_enabled: true in config."
+            )
+    
+    # 4. Rate limit validation
+    rate_limit = config.get('sec_api.rate_limit', 0)
+    if rate_limit <= 0:
+        errors.append(
+            f"Invalid SEC API rate limit: {rate_limit}. "
+            "Must be positive (recommended: 8-10 requests/second)."
+        )
+    elif rate_limit > 10:
+        errors.append(
+            f"SEC API rate limit too high: {rate_limit}. "
+            "SEC recommends max 10 requests/second to avoid being blocked."
+        )
+    
+    return errors

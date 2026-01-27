@@ -58,9 +58,16 @@ finloom = "finloom:main"
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+# Include the CLI script at the root level
+py-modules = ["finloom"]
+
 [tool.setuptools.packages.find]
+# Look for packages in the root directory
 where = ["."]
-include = ["src*"]
+# Include the src package and all its subpackages
+include = ["src", "src.*"]
+exclude = ["tests*", "scripts*", "migrations*", "Not_using*"]
 
 # Black configuration
 [tool.black]

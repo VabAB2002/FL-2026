@@ -46,7 +46,7 @@
                                                 ▼
                         ┌─────────────────────────────────────────────────┐
                         │               PARSING LAYER                      │
-                        │                                                  │
+                        │          (with validation & recovery)            │
                         │  ┌────────────────┐    ┌────────────────────┐   │
                         │  │  XBRL Parser   │    │  Section Parser    │   │
                         │  │  (Structured)  │    │  (Unstructured)    │   │
@@ -355,6 +355,181 @@
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## 8. Error Handling and Recovery
+
+### 8.1 Section Extraction Validation
+
+The UnstructuredDataPipeline includes critical validation to prevent incomplete data:
+
+**Validation Checks:**
+1. **Empty Sections Check**: Rejects filings that produce zero sections
+2. **Priority Sections Check**: Ensures key sections (Item 1, 1A, 7, 8) are present
+3. **Processing Flag**: Only sets `sections_processed=TRUE` for valid extractions
+
+**Example:**
+```python
+# Pipeline validates after extraction
+if not sections or len(sections) == 0:
+    return ProcessingResult(success=False, error_message="No sections extracted")
+
+# Check for priority sections
+PRIORITY_SECTIONS = {'item_1', 'item_1a', 'item_7', 'item_8'}
+if not extracted_section_types.intersection(PRIORITY_SECTIONS):
+    return ProcessingResult(success=False, error_message="No priority sections")
+```
+
+### 8.2 Recovery System
+
+For filings that failed extraction or need reprocessing:
+
+**Built-in Recovery Method:**
+```python
+from src.processing.unstructured_pipeline import UnstructuredDataPipeline
+
+pipeline = UnstructuredDataPipeline(db_path)
+result = pipeline.reprocess_filing(
+    accession_number="0000320193-23-000077",
+    filing_path=Path("data/raw/320193/0000320193-23-000077"),
+    force=True  # Reprocess even if already has sections
+)
+```
+
+**CLI Recovery Command:**
+```bash
+# Find and reprocess orphaned filings (processed but 0 sections)
+python finloom.py recovery reprocess
+
+# Dry run to see what would be reprocessed
+python finloom.py recovery reprocess --dry-run
+
+# Reprocess specific company
+python finloom.py recovery reprocess --ticker AAPL
+
+# Force reprocess even if has sections
+python finloom.py recovery reprocess --force
+
+# Include all failed (sections_processed=FALSE)
+python finloom.py recovery reprocess --all
+```
+
+**Recovery Process:**
+1. Identifies filings needing reprocessing (orphaned or failed)
+2. Deletes existing data (sections, tables, footnotes, chunks)
+3. Resets `sections_processed=FALSE`
+4. Re-extracts using fixed parser
+5. Validates results before marking complete
+
+**Idempotent Operations:**
+- Safe to run multiple times
+- Uses DELETE + INSERT pattern
+- Transactional (all-or-nothing)
+- Production-ready error handling
+
+### 8.3 Duplicate Management
+
+The Database class includes built-in duplicate detection and removal:
+
+**Duplicate Detection:**
+```python
+from src.storage.database import Database
+
+db = Database()
+duplicates = db.detect_duplicates("normalized_financials")
+
+for dup in duplicates:
+    print(f"{dup['ticker']} {dup['year']} {dup['metric']}: {dup['count']} entries")
+    # Each duplicate group includes details of all records
+```
+
+**Duplicate Removal:**
+```python
+# Dry run (preview only)
+stats = db.remove_duplicates("normalized_financials", dry_run=True)
+
+# Actually delete duplicates (keeps best: highest confidence, most recent)
+stats = db.remove_duplicates("normalized_financials", dry_run=False)
+```
+
+**CLI Commands:**
+```bash
+# Detect and display duplicates
+python finloom.py db detect-duplicates --table normalized_financials
+
+# Preview what would be deleted (dry run)
+python finloom.py db clean-duplicates --table normalized_financials
+
+# Actually delete duplicates
+python finloom.py db clean-duplicates --table normalized_financials --execute
+```
+
+**Duplicate Detection Logic:**
+- For `normalized_financials`: Groups by (ticker, year, quarter, metric_id)
+- Keeps record with highest `confidence_score`
+- If tied, keeps most recent `created_at`
+- Uses transactions (safe rollback on error)
+- Logs all operations
+
+### 8.4 System Verification and Health Checks
+
+The `DatabaseHealthChecker` class provides comprehensive system verification:
+
+**System Integrity Verification:**
+```python
+from src.monitoring.health_checker import DatabaseHealthChecker
+
+checker = DatabaseHealthChecker(db_path)
+report = checker.verify_system_integrity()
+
+# Report includes:
+# - Database schema validation
+# - Extraction progress statistics
+# - Top processed companies
+# - Quality metrics (confidence scores)
+# - Metadata features (tables, lists, parts)
+# - Hierarchical chunking distribution
+# - Database health (size, read-only status)
+```
+
+**CLI Command:**
+```bash
+# Basic system status
+python finloom.py status
+
+# Comprehensive system verification (production readiness check)
+python finloom.py status --verify-integrity
+```
+
+**Verification Checks:**
+1. **Schema**: Validates all required tables exist
+2. **Extraction Progress**: Shows processing rates and coverage
+3. **Top Companies**: Lists companies with most processed filings
+4. **Quality Metrics**: Average confidence scores, min/max ranges
+5. **Features**: Sections with tables, lists, part labels
+6. **Chunking**: Hierarchical chunk distribution (Section/Topic/Paragraph)
+7. **Database Health**: Size, read-only status, integrity
+
+**Health Status Levels:**
+- `healthy` ✅ - System is production ready
+- `warning` ⚠️ - Has warnings, review recommended
+- `critical` ❌ - Has issues, fixes required
+
+### 8.5 Migration from Workaround Scripts
+
+**Deprecated Scripts (Removed):**
+- `scripts/fix_missing_sections.py` → Use `finloom recovery reprocess`
+- `scripts/clean_duplicates.py` → Use `finloom db clean-duplicates --execute`
+- `scripts/verify_system.py` → Use `finloom status --verify-integrity`
+
+The root causes that necessitated workaround scripts have been fixed:
+- ✅ Pipeline now validates section extraction
+- ✅ Built-in recovery method with proper error handling
+- ✅ Built-in duplicate detection and removal in Database class
+- ✅ Built-in comprehensive system verification
+- ✅ CLI commands for all operational use
+- ✅ Metrics and logging integration
+- ✅ Transaction support for data safety
+- ✅ Production-ready health checks
 
 ## 9. File Structure
 

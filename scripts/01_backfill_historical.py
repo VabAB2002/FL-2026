@@ -125,22 +125,24 @@ def download_filings(
                     stats["filings_downloaded"] += 1
                     stats["total_bytes"] += result.total_bytes
                     
-                    # Update filing record
+                    # Update filing record with actual filing date from SEC
                     db.upsert_filing(
                         accession_number=result.accession_number,
                         cik=result.cik,
-                        form_type="10-K",
-                        filing_date=datetime.now().date(),  # Will be updated during parsing
+                        form_type=result.form_type or "10-K",
+                        filing_date=result.filing_date,  # ✅ FIXED: Use actual SEC filing date
+                        acceptance_datetime=result.acceptance_datetime,
                         local_path=result.local_path,
                         download_status="completed",
                     )
                 else:
                     stats["filings_failed"] += 1
+                    # Even for failed downloads, use actual filing date if available
                     db.upsert_filing(
                         accession_number=result.accession_number,
                         cik=result.cik,
-                        form_type="10-K",
-                        filing_date=datetime.now().date(),
+                        form_type=result.form_type or "10-K",
+                        filing_date=result.filing_date or datetime.now().date(),
                         download_status="failed",
                     )
                     db.log_processing(

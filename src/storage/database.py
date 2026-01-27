@@ -348,7 +348,28 @@ class Database:
         label: Optional[str] = None,
         depth: Optional[int] = None,
     ) -> int:
-        """Insert a fact record and return its ID."""
+        """Insert a fact record and return its ID. Skips if duplicate already exists."""
+        # Check if fact already exists (duplicate prevention)
+        dimensions_json = json.dumps(dimensions) if dimensions else None
+        check_sql = """
+            SELECT id FROM facts 
+            WHERE accession_number = ? 
+              AND concept_name = ? 
+              AND period_end IS NOT DISTINCT FROM ?
+              AND dimensions IS NOT DISTINCT FROM ?
+        """
+        existing = self.connection.execute(check_sql, [
+            accession_number, 
+            concept_name, 
+            period_end,
+            dimensions_json
+        ]).fetchone()
+        
+        # If fact already exists, return existing ID without inserting
+        if existing:
+            logger.debug(f"Fact already exists: {concept_name} for {accession_number}, skipping duplicate")
+            return existing[0]
+        
         # Get next ID from sequence
         id_result = self.connection.execute("SELECT nextval('facts_id_seq')").fetchone()
         fact_id = id_result[0]
@@ -364,7 +385,7 @@ class Database:
             fact_id, accession_number, concept_name, concept_namespace, concept_local_name,
             float(value) if value is not None else None, value_text, unit, decimals,
             period_type, period_start, period_end,
-            json.dumps(dimensions) if dimensions else None, is_custom, is_negated,
+            dimensions_json, is_custom, is_negated,
             section, parent_concept, label, depth
         ])
         return fact_id
@@ -873,6 +894,192 @@ class Database:
         sql += " ORDER BY company_ticker, fiscal_year DESC, metric_id"
         
         return self.connection.execute(sql, params).df()
+    
+    # ==================== Duplicate Management ====================
+    
+    def detect_duplicates(
+        self,
+        table: str = "normalized_financials"
+    ) -> list[dict]:
+        """
+        Detect duplicate records in specified table.
+        
+        For normalized_financials, duplicates are defined as multiple records
+        with the same (company_ticker, fiscal_year, fiscal_quarter, metric_id).
+        
+        Args:
+            table: Table name to check for duplicates
+        
+        Returns:
+            List of duplicate group dictionaries with metadata
+        
+        Example:
+            duplicates = db.detect_duplicates("normalized_financials")
+            for dup in duplicates:
+                print(f"{dup['ticker']} {dup['year']} {dup['metric']}: {dup['count']} entries")
+        """
+        if table == "normalized_financials":
+            # Find duplicate groups
+            results = self.connection.execute("""
+                SELECT 
+                    company_ticker, 
+                    fiscal_year, 
+                    fiscal_quarter, 
+                    metric_id,
+                    COUNT(*) as count
+                FROM normalized_financials
+                GROUP BY company_ticker, fiscal_year, fiscal_quarter, metric_id
+                HAVING COUNT(*) > 1
+                ORDER BY count DESC, company_ticker, fiscal_year DESC
+            """).fetchall()
+            
+            duplicates = []
+            for ticker, year, quarter, metric, count in results:
+                # Get details of all duplicate records in this group
+                records = self.connection.execute("""
+                    SELECT id, confidence_score, created_at, value
+                    FROM normalized_financials
+                    WHERE company_ticker = ?
+                      AND fiscal_year = ?
+                      AND COALESCE(fiscal_quarter, -1) = COALESCE(?, -1)
+                      AND metric_id = ?
+                    ORDER BY confidence_score DESC, created_at DESC
+                """, [ticker, year, quarter, metric]).fetchall()
+                
+                duplicates.append({
+                    "table": table,
+                    "ticker": ticker,
+                    "year": year,
+                    "quarter": quarter,
+                    "metric": metric,
+                    "count": count,
+                    "records": [
+                        {
+                            "id": r[0],
+                            "confidence": r[1],
+                            "created_at": r[2],
+                            "value": r[3],
+                            "keep": i == 0  # First (best) record should be kept
+                        }
+                        for i, r in enumerate(records)
+                    ]
+                })
+            
+            return duplicates
+        else:
+            raise ValueError(f"Duplicate detection not implemented for table: {table}")
+    
+    def remove_duplicates(
+        self,
+        table: str = "normalized_financials",
+        dry_run: bool = True
+    ) -> dict:
+        """
+        Remove duplicate records, keeping the best one per group.
+        
+        For normalized_financials:
+        - Keeps record with highest confidence_score
+        - If tied, keeps most recent (created_at DESC)
+        - Deletes all others
+        
+        Args:
+            table: Table name to clean
+            dry_run: If True, only reports what would be deleted (no actual deletion)
+        
+        Returns:
+            Dict with statistics: duplicate_groups, records_removed, records_kept
+        
+        Example:
+            # Preview what would be deleted
+            stats = db.remove_duplicates("normalized_financials", dry_run=True)
+            print(f"Would remove {stats['records_removed']} duplicate records")
+            
+            # Actually delete
+            stats = db.remove_duplicates("normalized_financials", dry_run=False)
+            print(f"Removed {stats['records_removed']} duplicates")
+        """
+        if table != "normalized_financials":
+            raise ValueError(f"Duplicate removal not implemented for table: {table}")
+        
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Detecting duplicates in {table}...")
+        
+        # Detect all duplicates
+        duplicates = self.detect_duplicates(table)
+        
+        if not duplicates:
+            logger.info("No duplicates found!")
+            return {
+                "duplicate_groups": 0,
+                "records_removed": 0,
+                "records_kept": 0
+            }
+        
+        logger.info(f"Found {len(duplicates)} duplicate groups")
+        
+        total_removed = 0
+        total_kept = len(duplicates)  # One kept per group
+        
+        if not dry_run:
+            # Start transaction for safety
+            self.connection.execute("BEGIN TRANSACTION")
+        
+        try:
+            for dup in duplicates:
+                ticker = dup["ticker"]
+                year = dup["year"]
+                quarter = dup["quarter"]
+                metric = dup["metric"]
+                count = dup["count"]
+                
+                # Get the best record to keep
+                keeper = self.connection.execute("""
+                    SELECT id
+                    FROM normalized_financials
+                    WHERE company_ticker = ?
+                      AND fiscal_year = ?
+                      AND COALESCE(fiscal_quarter, -1) = COALESCE(?, -1)
+                      AND metric_id = ?
+                    ORDER BY confidence_score DESC, created_at DESC
+                    LIMIT 1
+                """, [ticker, year, quarter, metric]).fetchone()
+                
+                keeper_id = keeper[0]
+                
+                # Delete all others
+                if not dry_run:
+                    self.connection.execute("""
+                        DELETE FROM normalized_financials
+                        WHERE company_ticker = ?
+                          AND fiscal_year = ?
+                          AND COALESCE(fiscal_quarter, -1) = COALESCE(?, -1)
+                          AND metric_id = ?
+                          AND id != ?
+                    """, [ticker, year, quarter, metric, keeper_id])
+                
+                removed = count - 1
+                total_removed += removed
+                
+                log_msg = f"{'Would remove' if dry_run else 'Removed'} {removed} duplicate(s) for {ticker} {year} Q{quarter or 'N/A'} {metric} (kept id={keeper_id})"
+                logger.info(f"  {log_msg}")
+            
+            if not dry_run:
+                # Commit transaction
+                self.connection.execute("COMMIT")
+                logger.info(f"Successfully removed {total_removed} duplicate records")
+            else:
+                logger.info(f"Would remove {total_removed} duplicate records (dry run)")
+            
+            return {
+                "duplicate_groups": len(duplicates),
+                "records_removed": total_removed,
+                "records_kept": total_kept
+            }
+            
+        except Exception as e:
+            if not dry_run:
+                self.connection.execute("ROLLBACK")
+                logger.error(f"Failed to remove duplicates, transaction rolled back: {e}")
+            raise
 
 
 def get_database() -> Database:

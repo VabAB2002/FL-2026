@@ -1,7 +1,13 @@
 """
 Semantic chunking engine for RAG-ready text extraction.
 
-Features:
+⚠️  CURRENTLY DISABLED - Will be implemented later ⚠️
+
+This module is kept for future implementation but is not currently
+integrated into the pipeline. Chunking functionality will be added
+after PDF extraction and core parsing are stabilized.
+
+Features (when enabled):
 - 3-level hierarchical chunking (section, topic, paragraph)
 - Smart boundary detection (preserve sentences, tables, lists)
 - Token counting and overlap management
@@ -13,6 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ..config.extraction_config import get_chunking_config
 from ..utils.logger import get_logger
 
 logger = get_logger("finloom.processing.chunker")
@@ -94,22 +101,27 @@ class SemanticChunker:
     - Keep tables with context
     - Keep lists together
     - Add overlap for context
+    
+    All configuration values (sizes, thresholds) are now in extraction_config.py
     """
     
-    # Configuration
-    TARGET_CHUNK_SIZE = 750  # tokens
-    MIN_CHUNK_SIZE = 500
-    MAX_CHUNK_SIZE = 1000
-    OVERLAP_SIZE = 100  # tokens
-    
-    # Patterns
+    # Patterns (not configurable - regex patterns)
     SENTENCE_ENDINGS = r'[.!?]+[\s"\']+'
     PARAGRAPH_BREAK = r'\n\n+'
     HEADING_PATTERN = r'^[A-Z][A-Za-z\s,:\-]{5,100}$'
     
-    def __init__(self) -> None:
-        """Initialize semantic chunker."""
-        logger.info("Semantic chunker initialized")
+    def __init__(self, config: Optional['ChunkingConfig'] = None) -> None:
+        """
+        Initialize semantic chunker.
+        
+        Args:
+            config: Chunking configuration (uses default if not provided).
+        """
+        self.config = config or get_chunking_config()
+        logger.info(
+            f"Semantic chunker initialized. Target size: {self.config.target_chunk_size} tokens, "
+            f"Range: {self.config.min_chunk_size}-{self.config.max_chunk_size}"
+        )
     
     def create_chunks(
         self,
@@ -201,13 +213,13 @@ class SemanticChunker:
             token_count = self._count_tokens(chunk_text)
             
             # Skip if too small (unless it's the last chunk)
-            if token_count < self.MIN_CHUNK_SIZE and boundary_end < len(text) - 100:
+            if not self.config.should_create_chunk(token_count) and boundary_end < len(text) - self.config.min_chunk_text_length:
                 continue
             
             # Truncate if too large
-            if token_count > self.MAX_CHUNK_SIZE:
-                chunk_text = self._truncate_to_token_limit(chunk_text, self.MAX_CHUNK_SIZE)
-                token_count = self.MAX_CHUNK_SIZE
+            if token_count > self.config.max_chunk_size:
+                chunk_text = self._truncate_to_token_limit(chunk_text, self.config.max_chunk_size)
+                token_count = self.config.max_chunk_size
             
             # Extract heading
             heading = self._extract_chunk_heading(chunk_text)
@@ -253,13 +265,13 @@ class SemanticChunker:
         
         for para in paragraphs:
             para = para.strip()
-            if not para or len(para) < 100:
+            if not para or len(para) < self.config.min_paragraph_length:
                 continue
             
             token_count = self._count_tokens(para)
             
             # Skip very short paragraphs
-            if token_count < 50:
+            if token_count < 50:  # Keep this hardcoded as it's for paragraph-level only
                 continue
             
             # Find parent topic chunk
@@ -298,14 +310,14 @@ class SemanticChunker:
             
             # Check if line looks like a heading
             if re.match(self.HEADING_PATTERN, line.strip()) and len(line.strip()) > 10:
-                # Save previous chunk if it's big enough
-                if current_size >= self.MIN_CHUNK_SIZE:
+                # Save previous chunk if it's big enough (use config)
+                if current_size >= self.config.min_chunk_size:
                     boundaries.append((current_start, current_pos))
                     current_start = current_pos
                     current_size = 0
             
-            # Check if we've reached target size
-            elif current_size >= self.TARGET_CHUNK_SIZE:
+            # Check if we've reached target size (use config)
+            elif current_size >= self.config.target_chunk_size:
                 # Find next sentence boundary
                 remaining = text[current_pos:]
                 sentence_match = re.search(self.SENTENCE_ENDINGS, remaining)
@@ -313,14 +325,14 @@ class SemanticChunker:
                 if sentence_match:
                     end_pos = current_pos + sentence_match.end()
                     boundaries.append((current_start, end_pos))
-                    current_start = end_pos - self.OVERLAP_SIZE * 4  # Approx chars per token
+                    current_start = end_pos - self.config.overlap_size * 4  # Approx chars per token
                     current_size = 0
             
             current_pos += line_len
             current_size = self._count_tokens(text[current_start:current_pos])
         
-        # Add final chunk
-        if current_size > self.MIN_CHUNK_SIZE // 2:
+        # Add final chunk (use config)
+        if current_size > self.config.min_chunk_size // 2:
             boundaries.append((current_start, len(text)))
         
         return boundaries
@@ -355,8 +367,10 @@ class SemanticChunker:
         
         if lines:
             first_line = lines[0].strip()
-            # Check if first line looks like a heading
-            if re.match(self.HEADING_PATTERN, first_line) and len(first_line) < 100:
+            # Check if first line looks like a heading (use config thresholds)
+            if (re.match(self.HEADING_PATTERN, first_line) and 
+                len(first_line) >= self.config.min_heading_length and
+                len(first_line) < self.config.max_heading_length):
                 return first_line
         
         return None

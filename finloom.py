@@ -16,12 +16,10 @@ Usage:
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from tabulate import tabulate
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.storage.database import Database
 from src.config.env_config import get_env_config
@@ -99,6 +97,116 @@ class FinLoomCLI:
             print(f"  ⚠️  Health checks unavailable: {e}")
         
         print()
+        
+        # System Verification (if requested)
+        if hasattr(args, 'verify_integrity') and args.verify_integrity:
+            print("="*80)
+            print("  COMPREHENSIVE SYSTEM VERIFICATION")
+            print("="*80 + "\n")
+            
+            from src.monitoring.health_checker import DatabaseHealthChecker
+            
+            db_path = self.config.get('storage.database_path')
+            checker = DatabaseHealthChecker(db_path)
+            
+            try:
+                report = checker.verify_system_integrity()
+                
+                # Overall status
+                status_icon = {"healthy": "✅", "warning": "⚠️", "critical": "❌"}.get(report['status'], "❓")
+                print(f"System Status: {status_icon} {report['status'].upper()}\n")
+                
+                # Schema
+                if 'schema' in report:
+                    print("1. DATABASE SCHEMA")
+                    if report['schema']['missing_tables']:
+                        print(f"   ❌ Missing tables: {', '.join(report['schema']['missing_tables'])}")
+                    else:
+                        print(f"   ✅ All required tables present ({len(report['schema']['required_tables'])} tables)")
+                    print()
+                
+                # Extraction
+                if 'extraction' in report:
+                    ext = report['extraction']
+                    print("2. EXTRACTION PROGRESS")
+                    print(f"   Total filings:................ {ext['total_filings']:,}")
+                    print(f"   Processed:.................... {ext['processed_filings']:,} ({ext['processing_rate']:.1f}%)")
+                    print(f"   With sections:................ {ext['filings_with_sections']:,} ({ext['section_rate']:.1f}%)")
+                    print(f"   Total sections:............... {ext['total_sections']:,}")
+                    print(f"   Total tables:................. {ext['total_tables']:,}")
+                    print(f"   Total footnotes:.............. {ext['total_footnotes']:,}")
+                    print(f"   Total chunks:................. {ext['total_chunks']:,}")
+                    print()
+                
+                # Top companies
+                if 'top_companies' in report and report['top_companies']:
+                    print("3. TOP PROCESSED COMPANIES")
+                    for company in report['top_companies'][:5]:
+                        print(f"   {company['ticker']:6} {company['name'][:40]:40} {company['processed_filings']:3} filings")
+                    print()
+                
+                # Quality
+                if 'quality' in report and report['quality']:
+                    q = report['quality']
+                    print("4. QUALITY METRICS")
+                    print(f"   Average confidence:........... {q['avg_confidence']:.3f}")
+                    print(f"   Range:........................ {q['min_confidence']:.3f} - {q['max_confidence']:.3f}")
+                    print(f"   Scored sections:.............. {q['scored_sections']:,}")
+                    print()
+                
+                # Features
+                if 'features' in report and report['features']:
+                    f = report['features']
+                    print("5. METADATA FEATURES")
+                    print(f"   Sections with part labels:.... {f['sections_with_parts']:,} ({f['parts_rate']:.1f}%)")
+                    print(f"   Sections with tables:......... {f['sections_with_tables']:,} ({f['tables_rate']:.1f}%)")
+                    print(f"   Sections with lists:.......... {f['sections_with_lists']:,} ({f['lists_rate']:.1f}%)")
+                    print()
+                
+                # Chunking
+                if 'chunking' in report and report['chunking']:
+                    print("6. HIERARCHICAL CHUNKING")
+                    for chunk in report['chunking']:
+                        print(f"   Level {chunk['level']} ({chunk['name']:10}): {chunk['count']:,} chunks")
+                    print()
+                
+                # Database
+                if 'database' in report:
+                    db = report['database']
+                    print("7. DATABASE")
+                    print(f"   Size:......................... {db['size_mb']:.2f} MB")
+                    print(f"   Read-only:.................... {'Yes' if db['read_only'] else 'No'}")
+                    print()
+                
+                # Issues and warnings
+                if report.get('issues'):
+                    print("❌ ISSUES:")
+                    for issue in report['issues']:
+                        print(f"   • {issue}")
+                    print()
+                
+                if report.get('warnings'):
+                    print("⚠️  WARNINGS:")
+                    for warning in report['warnings']:
+                        print(f"   • {warning}")
+                    print()
+                
+                # Summary
+                print("="*80)
+                if report['status'] == 'healthy':
+                    print("✅ SYSTEM IS PRODUCTION READY")
+                elif report['status'] == 'warning':
+                    print("⚠️  SYSTEM HAS WARNINGS - Review above for details")
+                else:
+                    print("❌ SYSTEM HAS CRITICAL ISSUES - Fix required before production")
+                print("="*80)
+                print()
+                
+            except Exception as e:
+                print(f"❌ Verification failed: {e}")
+                import traceback
+                traceback.print_exc()
+                print()
     
     def cmd_monitor(self, args):
         """Monitor operations."""
@@ -109,12 +217,28 @@ class FinLoomCLI:
             # Start Prometheus metrics
             if not args.no_metrics:
                 print("  • Prometheus metrics on http://localhost:9090/metrics")
-                os.system("python -c 'from src.monitoring import start_metrics_server; start_metrics_server()' &")
+                try:
+                    subprocess.Popen(
+                        [sys.executable, "-c", "from src.monitoring import start_metrics_server; start_metrics_server()"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True
+                    )
+                except Exception as e:
+                    print(f"    ⚠️  Failed to start metrics server: {e}")
             
             # Start health checks
             if not args.no_health:
                 print("  • Health checks on http://localhost:8000/health/detailed")
-                os.system("python -m src.monitoring.health &")
+                try:
+                    subprocess.Popen(
+                        [sys.executable, "-m", "src.monitoring.health"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True
+                    )
+                except Exception as e:
+                    print(f"    ⚠️  Failed to start health checks: {e}")
             
             print("\n✅ Monitoring services started!")
             print("\nAccess:")
@@ -124,15 +248,35 @@ class FinLoomCLI:
         
         elif args.action == 'stop':
             print("\n🛑 Stopping monitoring services...")
-            os.system("pkill -f 'start_metrics_server'")
-            os.system("pkill -f 'src.monitoring.health'")
-            print("✅ Services stopped!\n")
+            try:
+                subprocess.run(["pkill", "-f", "start_metrics_server"], check=False)
+                subprocess.run(["pkill", "-f", "src.monitoring.health"], check=False)
+                print("✅ Services stopped!\n")
+            except Exception as e:
+                print(f"⚠️  Error stopping services: {e}\n")
         
         elif args.action == 'status':
             print("\n📊 Monitoring Status:")
             # Check if processes are running
-            metrics_running = os.system("pgrep -f 'start_metrics_server' > /dev/null") == 0
-            health_running = os.system("pgrep -f 'src.monitoring.health' > /dev/null") == 0
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", "start_metrics_server"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                metrics_running = result.returncode == 0
+            except Exception:
+                metrics_running = False
+            
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", "src.monitoring.health"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                health_running = result.returncode == 0
+            except Exception:
+                health_running = False
             
             print(f"  Metrics Server: {'✅ Running' if metrics_running else '⚠️  Stopped'}")
             print(f"  Health Checks:  {'✅ Running' if health_running else '⚠️  Stopped'}")
@@ -186,12 +330,17 @@ class FinLoomCLI:
         """Backup operations."""
         print(f"\n💾 Running {args.type} backup...\n")
         
-        if args.type == 'full':
-            os.system("python scripts/backup_manager.py --full")
-        elif args.type == 'incremental':
-            os.system("python scripts/backup_manager.py --incremental")
-        elif args.type == 'list':
-            os.system("python scripts/backup_manager.py --list")
+        try:
+            if args.type == 'full':
+                subprocess.run([sys.executable, "scripts/backup_manager.py", "--full"], check=True)
+            elif args.type == 'incremental':
+                subprocess.run([sys.executable, "scripts/backup_manager.py", "--incremental"], check=True)
+            elif args.type == 'list':
+                subprocess.run([sys.executable, "scripts/backup_manager.py", "--list"], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"⚠️  Backup command failed with exit code {e.returncode}")
+        except Exception as e:
+            print(f"⚠️  Error running backup: {e}")
     
     def cmd_cache(self, args):
         """Cache operations."""
@@ -296,10 +445,187 @@ class FinLoomCLI:
             print(f"  Should Partition: {rec['should_partition']}")
             print(f"  Reason: {rec['reason']}")
             print()
+    
+    def cmd_db(self, args):
+        """Database maintenance operations."""
+        if args.action == 'detect-duplicates':
+            print("\n🔍 Detecting Duplicates\n")
+            
+            duplicates = self.db.detect_duplicates(args.table)
+            
+            if not duplicates:
+                print("✅ No duplicates found!\n")
+                return
+            
+            print(f"Found {len(duplicates)} duplicate groups:\n")
+            
+            for i, dup in enumerate(duplicates, 1):
+                print(f"{i}. {dup['ticker']} {dup['year']} Q{dup['quarter'] or 'N/A'} {dup['metric']}")
+                print(f"   {dup['count']} records:")
+                for rec in dup['records']:
+                    status = "KEEP" if rec['keep'] else "DELETE"
+                    print(f"     - ID {rec['id']}: confidence={rec['confidence']:.2f}, value={rec['value']}, created={rec['created_at']} [{status}]")
+                print()
+            
+            print("="*70)
+            print(f"Total duplicate groups: {len(duplicates)}")
+            print(f"Total records that can be removed: {sum(d['count'] - 1 for d in duplicates)}")
+            print("\nTo remove duplicates, run:")
+            print(f"  python finloom.py db clean-duplicates --table {args.table} --execute")
+            print("="*70)
+            print()
+        
+        elif args.action == 'clean-duplicates':
+            if not args.execute:
+                print("\n🔍 Clean Duplicates (DRY RUN)\n")
+                print("This is a preview - no data will be deleted.")
+                print("Use --execute to actually delete duplicates.\n")
+            else:
+                print("\n🧹 Clean Duplicates (EXECUTE MODE)\n")
+                print("⚠️  This will permanently delete duplicate records!")
+                print("Only the best record (highest confidence, most recent) will be kept.\n")
+            
+            # Run cleanup
+            stats = self.db.remove_duplicates(
+                table=args.table,
+                dry_run=not args.execute
+            )
+            
+            print()
+            print("="*70)
+            if args.execute:
+                print("  CLEANUP COMPLETE")
+            else:
+                print("  DRY RUN COMPLETE")
+            print("="*70)
+            print(f"\n  Duplicate groups: {stats['duplicate_groups']}")
+            print(f"  Records removed: {stats['records_removed']}")
+            print(f"  Records kept: {stats['records_kept']}")
+            
+            if not args.execute:
+                print("\n  No data was actually deleted (dry run)")
+                print(f"  Run with --execute to actually clean duplicates:")
+                print(f"    python finloom.py db clean-duplicates --table {args.table} --execute")
+            else:
+                print("\n  Database has been cleaned!")
+            
+            print("="*70)
+            print()
+    
+    def cmd_recovery(self, args):
+        """Recovery operations for failed extractions."""
+        from src.processing.unstructured_pipeline import UnstructuredDataPipeline
+        
+        if args.action == 'reprocess':
+            print("\n🔄 Recovery: Reprocessing Failed Extractions\n")
+            
+            # Query for filings that need reprocessing
+            # Case 1: sections_processed=TRUE but COUNT(sections)=0
+            orphaned_query = """
+                SELECT f.accession_number, f.local_path, c.ticker
+                FROM filings f
+                JOIN companies c ON f.cik = c.cik
+                LEFT JOIN sections s ON f.accession_number = s.accession_number
+                WHERE f.sections_processed = TRUE
+                GROUP BY f.accession_number, f.local_path, c.ticker
+                HAVING COUNT(s.id) = 0
+            """
+            
+            # Case 2: sections_processed=FALSE
+            failed_query = """
+                SELECT f.accession_number, f.local_path, c.ticker
+                FROM filings f
+                JOIN companies c ON f.cik = c.cik
+                WHERE f.sections_processed = FALSE
+                  AND f.local_path IS NOT NULL
+            """
+            
+            # Choose query based on --all flag
+            if args.all:
+                query = failed_query + " UNION " + orphaned_query
+            else:
+                query = orphaned_query
+            
+            # Optional ticker filter
+            if args.ticker:
+                query = f"SELECT * FROM ({query}) WHERE ticker = '{args.ticker}'"
+            
+            filings = self.db.connection.execute(query).fetchall()
+            
+            if not filings:
+                print("✅ No filings need reprocessing!")
+                print()
+                return
+            
+            print(f"Found {len(filings)} filing(s) to reprocess")
+            if args.dry_run:
+                print("\n🔍 DRY RUN - would reprocess:")
+                for acc, path, ticker in filings[:10]:
+                    print(f"  • {ticker}: {acc}")
+                if len(filings) > 10:
+                    print(f"  ... and {len(filings) - 10} more")
+                print()
+                return
+            
+            # Initialize pipeline
+            db_path = self.config.get('storage.database_path')
+            pipeline = UnstructuredDataPipeline(db_path)
+            
+            # Reprocess each filing
+            success = 0
+            failed = 0
+            
+            print()
+            for accession, local_path, ticker in filings:
+                print(f"Processing {ticker}: {accession}... ", end="", flush=True)
+                
+                if not local_path or not Path(local_path).exists():
+                    print("❌ Path not found")
+                    failed += 1
+                    continue
+                
+                try:
+                    result = pipeline.reprocess_filing(
+                        accession_number=accession,
+                        filing_path=Path(local_path),
+                        force=args.force
+                    )
+                    
+                    if result.success:
+                        print(f"✅ {result.sections_count} sections")
+                        success += 1
+                    else:
+                        print(f"❌ {result.error_message}")
+                        failed += 1
+                        
+                except Exception as e:
+                    print(f"❌ Error: {e}")
+                    failed += 1
+            
+            print()
+            print("="*70)
+            print(f"✅ Success: {success}")
+            print(f"❌ Failed:  {failed}")
+            print("="*70)
+            print()
 
 
 def main():
     """Main CLI entry point."""
+    # Validate environment variables before doing anything else
+    from src.config.env_config import validate_environment_variables
+    
+    validation_errors = validate_environment_variables()
+    if validation_errors:
+        print("\n❌ Configuration Errors Detected:")
+        print("="*70)
+        for i, error in enumerate(validation_errors, 1):
+            print(f"\n{i}. {error}")
+        print("\n" + "="*70)
+        print("\nPlease fix these configuration issues before running FinLoom.")
+        print("See .env.example for required environment variables.\n")
+        return 1
+    
     parser = argparse.ArgumentParser(
         description="FinLoom Enterprise Operations CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter
@@ -308,7 +634,8 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')
     
     # Status command
-    subparsers.add_parser('status', help='Show system status')
+    status_parser = subparsers.add_parser('status', help='Show system status')
+    status_parser.add_argument('--verify-integrity', action='store_true', help='Run comprehensive system verification')
     
     # Monitor command
     monitor_parser = subparsers.add_parser('monitor', help='Monitor operations')
@@ -340,6 +667,20 @@ def main():
     perf_parser = subparsers.add_parser('perf', help='Performance operations')
     perf_parser.add_argument('action', choices=['analyze'])
     
+    # Recovery command
+    recovery_parser = subparsers.add_parser('recovery', help='Recovery operations for failed extractions')
+    recovery_parser.add_argument('action', choices=['reprocess'])
+    recovery_parser.add_argument('--dry-run', action='store_true', help="Show what would be reprocessed without doing it")
+    recovery_parser.add_argument('--ticker', type=str, help="Only reprocess specific ticker")
+    recovery_parser.add_argument('--force', action='store_true', help="Reprocess even if sections already exist")
+    recovery_parser.add_argument('--all', action='store_true', help="Include sections_processed=FALSE (not just orphaned)")
+    
+    # Database command
+    db_parser = subparsers.add_parser('db', help='Database maintenance operations')
+    db_parser.add_argument('action', choices=['clean-duplicates', 'detect-duplicates'])
+    db_parser.add_argument('--table', type=str, default='normalized_financials', help="Table to check (default: normalized_financials)")
+    db_parser.add_argument('--execute', action='store_true', help="Actually delete duplicates (required for clean-duplicates)")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -369,6 +710,10 @@ def main():
             cli.cmd_config(args)
         elif args.command == 'perf':
             cli.cmd_perf(args)
+        elif args.command == 'recovery':
+            cli.cmd_recovery(args)
+        elif args.command == 'db':
+            cli.cmd_db(args)
         
         return 0
         

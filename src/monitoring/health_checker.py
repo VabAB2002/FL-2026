@@ -544,3 +544,218 @@ class DatabaseHealthChecker:
 
         finally:
             conn.close()
+    
+    def verify_system_integrity(self) -> dict:
+        """
+        Comprehensive system verification for production readiness.
+        
+        Checks:
+        1. Database schema (required tables exist)
+        2. Extraction progress (filings processed, sections, chunks, footnotes)
+        3. Top processed companies
+        4. Quality metrics (average quality scores)
+        5. Metadata features (tables, lists, parts)
+        6. Hierarchical chunking distribution
+        
+        Returns:
+            Dict with comprehensive system statistics and health status
+        
+        Example:
+            checker = DatabaseHealthChecker(db_path)
+            report = checker.verify_system_integrity()
+            
+            if report['status'] == 'healthy':
+                print("✅ System is production ready!")
+            else:
+                print(f"⚠️ Issues: {report['issues']}")
+        """
+        conn = duckdb.connect(self.db_path, read_only=True)
+        
+        try:
+            result = {
+                'status': 'healthy',
+                'issues': [],
+                'warnings': []
+            }
+            
+            # 1. Schema Verification
+            required_tables = ['sections', 'tables', 'footnotes', 'chunks', 'filings', 'companies']
+            existing_tables = conn.execute("""
+                SELECT table_name FROM information_schema.tables 
+                WHERE table_schema = 'main'
+            """).fetchall()
+            existing_table_names = {t[0] for t in existing_tables}
+            
+            missing_tables = [t for t in required_tables if t not in existing_table_names]
+            if missing_tables:
+                result['issues'].append(f"Missing required tables: {', '.join(missing_tables)}")
+                result['status'] = 'critical'
+            
+            result['schema'] = {
+                'required_tables': required_tables,
+                'existing_tables': sorted(list(existing_table_names)),
+                'missing_tables': missing_tables
+            }
+            
+            # 2. Extraction Stats
+            stats = conn.execute("""
+                SELECT 
+                    COUNT(DISTINCT f.accession_number) as total_filings,
+                    COUNT(DISTINCT CASE WHEN f.sections_processed THEN f.accession_number END) as processed_filings,
+                    COUNT(DISTINCT s.accession_number) as filings_with_sections,
+                    COUNT(s.id) as total_sections,
+                    COUNT(t.id) as total_tables,
+                    COUNT(fn.id) as total_footnotes,
+                    COUNT(c.chunk_id) as total_chunks
+                FROM filings f
+                LEFT JOIN sections s ON f.accession_number = s.accession_number
+                LEFT JOIN tables t ON f.accession_number = t.accession_number
+                LEFT JOIN footnotes fn ON f.accession_number = fn.accession_number
+                LEFT JOIN chunks c ON f.accession_number = c.accession_number
+                WHERE f.download_status = 'completed'
+            """).fetchone()
+            
+            total_filings = stats[0] or 0
+            processed_filings = stats[1] or 0
+            filings_with_sections = stats[2] or 0
+            
+            processing_rate = (processed_filings / total_filings * 100) if total_filings > 0 else 0
+            section_rate = (filings_with_sections / total_filings * 100) if total_filings > 0 else 0
+            
+            result['extraction'] = {
+                'total_filings': total_filings,
+                'processed_filings': processed_filings,
+                'filings_with_sections': filings_with_sections,
+                'processing_rate': round(processing_rate, 1),
+                'section_rate': round(section_rate, 1),
+                'total_sections': stats[3] or 0,
+                'total_tables': stats[4] or 0,
+                'total_footnotes': stats[5] or 0,
+                'total_chunks': stats[6] or 0
+            }
+            
+            # Warn if processing rate is low
+            if total_filings > 0 and section_rate < 80:
+                result['warnings'].append(
+                    f"Section extraction coverage is {section_rate:.1f}% "
+                    f"({filings_with_sections}/{total_filings} filings)"
+                )
+                if result['status'] == 'healthy':
+                    result['status'] = 'warning'
+            
+            # 3. Top Companies
+            companies = conn.execute("""
+                SELECT c.ticker, c.company_name, COUNT(DISTINCT s.accession_number) as processed_count
+                FROM companies c
+                JOIN filings f ON c.cik = f.cik
+                LEFT JOIN sections s ON f.accession_number = s.accession_number
+                WHERE f.download_status = 'completed'
+                GROUP BY c.ticker, c.company_name
+                HAVING COUNT(DISTINCT s.accession_number) > 0
+                ORDER BY processed_count DESC
+                LIMIT 10
+            """).fetchall()
+            
+            result['top_companies'] = [
+                {
+                    'ticker': ticker,
+                    'name': name,
+                    'processed_filings': count
+                }
+                for ticker, name, count in companies
+            ]
+            
+            # 4. Quality Metrics
+            quality = conn.execute("""
+                SELECT 
+                    AVG(extraction_confidence) as avg_confidence,
+                    COUNT(*) as total_with_confidence,
+                    MIN(extraction_confidence) as min_confidence,
+                    MAX(extraction_confidence) as max_confidence
+                FROM sections
+                WHERE extraction_confidence IS NOT NULL AND extraction_confidence > 0
+            """).fetchone()
+            
+            if quality[0] is not None:
+                result['quality'] = {
+                    'avg_confidence': round(quality[0], 3),
+                    'scored_sections': quality[1],
+                    'min_confidence': round(quality[2], 3),
+                    'max_confidence': round(quality[3], 3)
+                }
+                
+                # Warn if average quality is low
+                if quality[0] < 0.7:
+                    result['warnings'].append(
+                        f"Average extraction confidence is low: {quality[0]:.2f}"
+                    )
+                    if result['status'] == 'healthy':
+                        result['status'] = 'warning'
+            else:
+                result['quality'] = None
+            
+            # 5. Feature Verification
+            features = conn.execute("""
+                SELECT 
+                    SUM(CASE WHEN section_part IS NOT NULL AND section_part != '' THEN 1 ELSE 0 END) as with_parts,
+                    SUM(CASE WHEN contains_tables THEN 1 ELSE 0 END) as with_tables,
+                    SUM(CASE WHEN contains_lists THEN 1 ELSE 0 END) as with_lists,
+                    COUNT(*) as total_sections
+                FROM sections
+            """).fetchone()
+            
+            total_sections = features[3] or 0
+            if total_sections > 0:
+                result['features'] = {
+                    'sections_with_parts': features[0] or 0,
+                    'sections_with_tables': features[1] or 0,
+                    'sections_with_lists': features[2] or 0,
+                    'total_sections': total_sections,
+                    'parts_rate': round((features[0] or 0) / total_sections * 100, 1),
+                    'tables_rate': round((features[1] or 0) / total_sections * 100, 1),
+                    'lists_rate': round((features[2] or 0) / total_sections * 100, 1)
+                }
+            else:
+                result['features'] = None
+            
+            # 6. Hierarchical Chunking
+            chunk_levels = conn.execute("""
+                SELECT chunk_level, COUNT(*) as count
+                FROM chunks
+                GROUP BY chunk_level
+                ORDER BY chunk_level
+            """).fetchall()
+            
+            level_names = {1: 'Section', 2: 'Topic', 3: 'Paragraph'}
+            result['chunking'] = [
+                {
+                    'level': level,
+                    'name': level_names.get(level, f'Level {level}'),
+                    'count': count
+                }
+                for level, count in chunk_levels
+            ]
+            
+            # 7. Database Health
+            import os
+            db_size_mb = os.path.getsize(self.db_path) / (1024 * 1024) if os.path.exists(self.db_path) else 0
+            
+            result['database'] = {
+                'path': self.db_path,
+                'size_mb': round(db_size_mb, 2),
+                'read_only': conn.execute("PRAGMA database_list").fetchone()[2] == 1
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"System verification failed: {e}", exc_info=True)
+            return {
+                'status': 'critical',
+                'issues': [f"Verification failed: {str(e)}"],
+                'warnings': [],
+                'error': str(e)
+            }
+        
+        finally:
+            conn.close()
