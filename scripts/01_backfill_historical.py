@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.ingestion.downloader import SECDownloader
 from src.ingestion.sec_api import SECApi
-from src.parsers.section_parser import SectionParser
 from src.parsers.xbrl_parser import SimpleXBRLParser, XBRLParser
+from src.processing.unstructured_pipeline import UnstructuredDataPipeline
 from src.storage.database import Database, initialize_database
 from src.utils.config import get_settings, load_config
 from src.utils.logger import get_logger, setup_logging
@@ -193,12 +193,16 @@ def parse_filings(
         xbrl_parser = SimpleXBRLParser()
     else:
         try:
-            xbrl_parser = XBRLParser()
+            # Get extract_all_facts from config
+            extract_all = settings.extraction.extract_all_xbrl_facts
+            logger.info(f"Initializing XBRL parser (extract_all_facts={extract_all})")
+            xbrl_parser = XBRLParser(extract_all_facts=extract_all)
         except ImportError:
             logger.warning("Arelle not available, using simple parser")
             xbrl_parser = SimpleXBRLParser()
     
-    section_parser = SectionParser(priority_only=True)
+    # Initialize unstructured pipeline for markdown extraction
+    unstructured_pipeline = UnstructuredDataPipeline(str(db.db_path))
     quality_checker = DataQualityChecker()
     
     # Get unprocessed filings
@@ -226,6 +230,19 @@ def parse_filings(
             xbrl_result = xbrl_parser.parse_filing(filing_path, accession)
             
             if xbrl_result.success:
+                # Validate fact completeness
+                extract_all = settings.extraction.extract_all_xbrl_facts
+                completeness_issues = quality_checker.validate_fact_completeness(
+                    facts=xbrl_result.facts,
+                    accession_number=accession,
+                    extract_all_mode=extract_all
+                )
+                
+                # Log quality issues (insert_quality_issue method not yet implemented)
+                for issue in completeness_issues:
+                    # db.insert_quality_issue(**issue)
+                    logger.warning(f"Quality issue: {issue['message']}")
+                
                 # Insert facts into database
                 for fact in xbrl_result.facts:
                     db.insert_fact(
@@ -235,59 +252,67 @@ def parse_filings(
                 stats["facts_extracted"] += len(xbrl_result.facts)
                 stats["xbrl_success"] += 1
                 
+                # Log extraction metrics
+                logger.info(
+                    f"Extracted {len(xbrl_result.facts)} facts "
+                    f"(mode: {'all' if extract_all else 'core'})"
+                )
+                
                 # Update filing with period info
                 if xbrl_result.period_end:
                     db.update_filing_status(
                         accession_number=accession,
                         xbrl_processed=True,
                     )
+                
+                # Log detailed processing metrics
+                db.log_processing(
+                    pipeline_stage="xbrl_parse",
+                    status="completed",
+                    accession_number=accession,
+                    cik=filing["cik"],
+                    processing_time_ms=xbrl_result.parse_time_ms,
+                    records_processed=len(xbrl_result.facts),
+                    context={
+                        "extraction_mode": "all_facts" if extract_all else "core_only",
+                        "fact_count": len(xbrl_result.facts),
+                        "core_fact_count": len(xbrl_result.core_facts),
+                        "has_hierarchy": any(f.section for f in xbrl_result.facts),
+                        "has_labels": any(f.label for f in xbrl_result.facts),
+                        "sections": list(set(f.section for f in xbrl_result.facts if f.section)),
+                    }
+                )
             else:
                 stats["xbrl_failed"] += 1
                 logger.warning(f"XBRL parsing failed: {xbrl_result.error_message}")
             
-            # Parse sections
-            section_result = section_parser.parse_filing(filing_path, accession)
+            # Extract markdown using unstructured pipeline
+            markdown_result = unstructured_pipeline.process_filing(accession, filing_path)
             
-            if section_result.success:
-                for section in section_result.sections:
-                    db.insert_section(
-                        accession_number=accession,
-                        **section.to_dict(),
-                    )
-                stats["sections_extracted"] += len(section_result.sections)
+            if markdown_result.success:
                 stats["sections_success"] += 1
-                
-                db.update_filing_status(
-                    accession_number=accession,
-                    sections_processed=True,
-                )
+                logger.info(f"Extracted markdown: {markdown_result.markdown_word_count:,} words")
             else:
                 stats["sections_failed"] += 1
-                logger.warning(f"Section parsing failed: {section_result.error_message}")
+                logger.warning(f"Markdown extraction failed: {markdown_result.error_message}")
             
-            # Validate and log quality issues
-            if xbrl_result.success and section_result.success:
-                validation = quality_checker.validate_filing_complete(
-                    filing,
-                    [f.to_dict() for f in xbrl_result.facts],
-                    [s.to_dict() for s in section_result.sections],
-                )
-                
-                for issue in validation.issues:
-                    if issue.severity == "error":
-                        logger.warning(f"Quality issue: {issue.message}")
+            # Note: Validation removed - markdown-only architecture doesn't have sections list
             
             stats["filings_processed"] += 1
             elapsed = time.time() - start_time
             logger.info(f"Parsed {accession} in {elapsed:.1f}s")
             
             # Log processing
+            records_count = len(xbrl_result.facts) if xbrl_result.success else 0
+            if markdown_result.success:
+                records_count += 1  # Count markdown as 1 record
+            
             db.log_processing(
                 pipeline_stage="parse",
                 status="completed",
                 accession_number=accession,
                 processing_time_ms=int(elapsed * 1000),
-                records_processed=len(xbrl_result.facts) + len(section_result.sections),
+                records_processed=records_count,
             )
             
         except Exception as e:

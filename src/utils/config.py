@@ -56,6 +56,7 @@ class ExtractionConfig(BaseModel):
     start_year: int = Field(default=2014)
     end_year: int = Field(default=2024)
     sections: list[str] = Field(default=["item_1", "item_1a", "item_7", "item_8", "item_9a"])
+    extract_all_xbrl_facts: bool = Field(default=True)
 
 
 class SECApiConfig(BaseModel):
@@ -321,6 +322,7 @@ class AppConfig:
         """Get feature flags with environment-specific defaults."""
         # Default flags
         flags = {
+            "extract_all_xbrl_facts": self._settings.extraction.extract_all_xbrl_facts,
             "async_downloads": True,
             "section_extraction": True,
             "table_extraction": False,

@@ -196,69 +196,10 @@ class DuckDBCompanyRepository(CompanyRepository):
 
 
 # =============================================================================
-# Section Repository
+# Section Repository (REMOVED)
 # =============================================================================
-
-
-class DuckDBSectionRepository(SectionRepository):
-    """DuckDB implementation of SectionRepository."""
-
-    def __init__(self, db: Optional[Database] = None):
-        self._db = db
-
-    @property
-    def db(self) -> Database:
-        """Lazy database initialization."""
-        if self._db is None:
-            self._db = get_database()
-        return self._db
-
-    def get_sections(self, filing_id: int) -> list[dict]:
-        """Get all sections for a filing."""
-        result = self.db.connection.execute(
-            "SELECT accession_number FROM filings WHERE id = ?", [filing_id]
-        ).fetchone()
-        if not result:
-            return []
-        return self.db.get_sections(result[0])
-
-    def get_sections_for_filing(self, accession_number: str) -> list[dict]:
-        """Get all sections for a filing by accession number."""
-        return self.db.get_sections(accession_number)
-
-    def get_section(self, filing_id: int, section_type: str) -> Optional[dict]:
-        """Get a specific section by type."""
-        result = self.db.connection.execute(
-            "SELECT accession_number FROM filings WHERE id = ?", [filing_id]
-        ).fetchone()
-        if not result:
-            return None
-        sections = self.db.get_sections(result[0], section_type=section_type)
-        return sections[0] if sections else None
-
-    def save_sections(self, sections: list[dict]) -> int:
-        """Save sections and return count saved."""
-        count = 0
-        for section in sections:
-            self.db.insert_section(**section)
-            count += 1
-        return count
-
-    def delete_sections(self, filing_id: int) -> int:
-        """Delete sections for a filing."""
-        result = self.db.connection.execute(
-            "SELECT accession_number FROM filings WHERE id = ?", [filing_id]
-        ).fetchone()
-        if not result:
-            return 0
-        accession = result[0]
-        count = self.db.connection.execute(
-            "SELECT COUNT(*) FROM sections WHERE accession_number = ?", [accession]
-        ).fetchone()[0]
-        self.db.connection.execute(
-            "DELETE FROM sections WHERE accession_number = ?", [accession]
-        )
-        return count
+# Note: Section repository removed in markdown-only architecture.
+# All unstructured data is stored in filings.full_markdown column.
 
 
 # =============================================================================
@@ -361,7 +302,7 @@ class DuckDBConceptMappingRepository:
 _filing_repo: Optional[DuckDBFilingRepository] = None
 _fact_repo: Optional[DuckDBFactRepository] = None
 _company_repo: Optional[DuckDBCompanyRepository] = None
-_section_repo: Optional[DuckDBSectionRepository] = None
+# _section_repo removed - markdown-only architecture
 _metrics_repo: Optional[DuckDBNormalizedMetricsRepository] = None
 _mapping_repo: Optional[DuckDBConceptMappingRepository] = None
 
@@ -390,12 +331,7 @@ def get_company_repository(db: Optional[Database] = None) -> DuckDBCompanyReposi
     return _company_repo
 
 
-def get_section_repository(db: Optional[Database] = None) -> DuckDBSectionRepository:
-    """Get or create section repository singleton."""
-    global _section_repo
-    if _section_repo is None or db is not None:
-        _section_repo = DuckDBSectionRepository(db)
-    return _section_repo
+# get_section_repository removed - markdown-only architecture
 
 
 def get_metrics_repository(

@@ -506,65 +506,9 @@ class Database:
         
         return self.connection.execute(sql, params).df()
     
-    # ==================== Sections Operations ====================
-    
-    def insert_section(
-        self,
-        accession_number: str,
-        section_type: str,
-        content_text: str,
-        section_title: Optional[str] = None,
-        section_number: Optional[str] = None,
-        content_html: Optional[str] = None,
-        word_count: Optional[int] = None,
-        character_count: Optional[int] = None,
-        paragraph_count: Optional[int] = None,
-        extraction_confidence: Optional[float] = None,
-        extraction_method: Optional[str] = None,
-    ) -> int:
-        """Insert a section record and return its ID."""
-        # Get next ID
-        id_result = self.connection.execute("SELECT nextval('sections_id_seq')").fetchone()
-        section_id = id_result[0]
-        
-        # Calculate counts if not provided
-        if word_count is None and content_text:
-            word_count = len(content_text.split())
-        if character_count is None and content_text:
-            character_count = len(content_text)
-        if paragraph_count is None and content_text:
-            paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
-        
-        sql = """
-            INSERT INTO sections (
-                id, accession_number, section_type, section_title, section_number,
-                content_text, content_html, word_count, character_count, paragraph_count,
-                extraction_confidence, extraction_method
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        self.connection.execute(sql, [
-            section_id, accession_number, section_type, section_title, section_number,
-            content_text, content_html, word_count, character_count, paragraph_count,
-            extraction_confidence, extraction_method
-        ])
-        return section_id
-    
-    def get_sections(
-        self,
-        accession_number: str,
-        section_type: Optional[str] = None,
-    ) -> list[dict]:
-        """Get sections for a filing."""
-        sql = "SELECT * FROM sections WHERE accession_number = ?"
-        params = [accession_number]
-        
-        if section_type:
-            sql += " AND section_type = ?"
-            params.append(section_type)
-        
-        results = self.connection.execute(sql, params).fetchall()
-        columns = [desc[0] for desc in self.connection.description]
-        return [dict(zip(columns, row)) for row in results]
+    # ==================== Sections Operations (REMOVED) ====================
+    # Note: Section extraction removed in markdown-only architecture.
+    # All unstructured data is stored in filings.full_markdown column.
     
     # ==================== Processing Logs ====================
     

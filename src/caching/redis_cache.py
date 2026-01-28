@@ -13,7 +13,7 @@ from functools import wraps
 import redis
 
 from ..utils.logger import get_logger
-from ..config.env_config import get_env_config
+from ..utils.config import get_config
 
 logger = get_logger("finloom.caching.redis_cache")
 

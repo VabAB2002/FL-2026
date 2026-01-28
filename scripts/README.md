@@ -438,6 +438,34 @@ python scripts/analysis/view_company.py --ticker AAPL
 
 ## Utility Scripts
 
+### check_data_duplicates.py
+
+**Purpose:** Unified duplicate detection and analysis tool
+
+**Usage:**
+```bash
+# Quick check (fast, bypasses config validation)
+python scripts/check_data_duplicates.py --mode quick
+
+# Full check (comprehensive with Database class validation)
+python scripts/check_data_duplicates.py --mode full
+
+# Detailed report (analysis with cleanup SQL recommendations)
+python scripts/check_data_duplicates.py --mode report
+```
+
+**What it does:**
+- **Quick mode:** Fast duplicate check using direct DuckDB connection
+- **Full mode:** Comprehensive check with logging and built-in Database methods
+- **Report mode:** Detailed analysis with cleanup recommendations and SQL scripts
+
+**When to use:**
+- Quick mode: For rapid diagnostics and daily checks
+- Full mode: For thorough analysis with proper logging
+- Report mode: When you need to clean up duplicates (provides SQL)
+
+---
+
 ### quick_check.py
 
 **Purpose:** Quick system health check

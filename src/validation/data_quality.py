@@ -263,7 +263,63 @@ class DataQualityChecker:
         # Check for duplicates
         self._check_duplicates(validated_facts, result, accession_number)
         
+        logger.debug(f"Validated {len(validated_facts)} facts, found {len(result.issues)} issues")
         return result
+    
+    def validate_fact_completeness(
+        self,
+        facts: list,
+        accession_number: str,
+        extract_all_mode: bool
+    ) -> list[dict]:
+        """
+        Validate fact count is within expected ranges.
+        
+        Args:
+            facts: List of extracted facts
+            accession_number: Filing identifier
+            extract_all_mode: Whether full extraction was used
+        
+        Returns:
+            List of validation issues as dicts
+        """
+        issues = []
+        fact_count = len(facts)
+        
+        # Expected ranges based on mode
+        if extract_all_mode:
+            min_expected = 500  # Minimum for full extraction
+            max_expected = 3000  # Maximum reasonable
+            mode = "full extraction"
+        else:
+            min_expected = 20  # Minimum core facts
+            max_expected = 150  # Maximum core facts
+            mode = "core concepts only"
+        
+        if fact_count < min_expected:
+            issues.append({
+                "type": "fact_count_low",
+                "severity": "warning",
+                "message": f"Low fact count for {mode}: {fact_count} facts (expected {min_expected}+)",
+                "accession_number": accession_number,
+                "field_name": "fact_count",
+                "actual_value": str(fact_count),
+                "expected_value": f"{min_expected}+",
+            })
+        
+        if fact_count > max_expected:
+            issues.append({
+                "type": "fact_count_high",
+                "severity": "warning",
+                "message": f"Unusually high fact count: {fact_count} facts (max expected {max_expected})",
+                "accession_number": accession_number,
+                "field_name": "fact_count",
+                "actual_value": str(fact_count),
+                "expected_value": f"<{max_expected}",
+            })
+        
+        logger.debug(f"Fact completeness check: {fact_count} facts in {mode} mode, {len(issues)} issues")
+        return issues
     
     def _check_required_concepts(
         self,

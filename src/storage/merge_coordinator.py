@@ -199,34 +199,18 @@ class MergeCoordinator:
             conn.execute("BEGIN TRANSACTION")
 
             try:
-                # Step 1: DELETE existing data (idempotent - order matters for FK)
+                # Note: Section/table/footnote deletion removed in markdown-only architecture
+                # Only chunks remain (if implemented in future)
                 conn.execute(
                     "DELETE FROM chunks WHERE accession_number = ?",
                     [accession_number]
                 )
-                conn.execute(
-                    "DELETE FROM footnotes WHERE accession_number = ?",
-                    [accession_number]
-                )
-                conn.execute(
-                    "DELETE FROM tables WHERE accession_number = ?",
-                    [accession_number]
-                )
-                conn.execute(
-                    "DELETE FROM sections WHERE accession_number = ?",
-                    [accession_number]
-                )
 
-                # Step 2: INSERT from staging tables
-                sections_count = self._insert_from_staging(
-                    conn, sections_staging, "sections", accession_number
-                )
-                tables_count = self._insert_from_staging(
-                    conn, tables_staging, "tables", accession_number
-                )
-                footnotes_count = self._insert_from_staging(
-                    conn, footnotes_staging, "footnotes", accession_number
-                )
+                # Step 2: INSERT from staging tables (simplified - markdown only)
+                # Note: sections_count, tables_count, footnotes_count no longer used
+                sections_count = 0
+                tables_count = 0
+                footnotes_count = 0
                 chunks_count = self._insert_from_staging(
                     conn, chunks_staging, "chunks", accession_number
                 )

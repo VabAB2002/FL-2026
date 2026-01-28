@@ -133,3 +133,13 @@ logging:
   log_path: "logs"
   max_log_files: 30
   log_format: "json"  # json or text
+
+# Feature flags for pipeline behavior
+features:
+  # XBRL extraction mode
+  extract_all_xbrl_facts: true  # true = all facts (1131+), false = core only (94)
+  
+  # Future flags
+  async_downloads: true
+  section_extraction: true
+  table_extraction: false

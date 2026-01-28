@@ -168,32 +168,9 @@ duplicate_records = Gauge(
 )
 
 # =============================================================================
-# Unstructured Data Extraction Metrics
+# Unstructured Data Extraction Metrics (Markdown-Only)
 # =============================================================================
-
-unstructured_sections_extracted = Counter(
-    'finloom_unstructured_sections_extracted_total',
-    'Total sections extracted from filings',
-    ['accession']
-)
-
-unstructured_tables_extracted = Counter(
-    'finloom_unstructured_tables_extracted_total',
-    'Total tables extracted from filings',
-    ['accession']
-)
-
-unstructured_footnotes_extracted = Counter(
-    'finloom_unstructured_footnotes_extracted_total',
-    'Total footnotes extracted from filings',
-    ['accession']
-)
-
-# unstructured_chunks_created = Counter(
-#     'finloom_unstructured_chunks_created_total',
-#     'Total semantic chunks created for RAG',
-#     ['accession']
-# )  # DISABLED: Chunking not implemented yet
+# Note: Section/table/footnote extraction metrics removed in markdown-only architecture
 
 unstructured_quality_score = Gauge(
     'finloom_unstructured_quality_score',

@@ -46,7 +46,9 @@ data/database/
 data/checkpoints/
 
 # Logs
-logs/*.log
+logs/*.log*
+backfill_output.log
+*.log
 
 # Test artifacts
 .pytest_cache/
@@ -64,3 +66,6 @@ htmlcov/
 !data/database/.gitkeep
 !logs/.gitkeep
 *.duckdb
+*.duckdb.backup*
+*.backup
+*.wal

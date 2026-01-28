@@ -22,7 +22,7 @@ from pathlib import Path
 from tabulate import tabulate
 
 from src.storage.database import Database
-from src.config.env_config import get_env_config
+from src.utils.config import get_config
 from src.utils.logger import get_logger, setup_logging
 
 logger = get_logger("finloom.cli")
@@ -33,7 +33,7 @@ class FinLoomCLI:
     
     def __init__(self):
         """Initialize CLI."""
-        self.config = get_env_config()
+        self.config = get_config()
         self.db = Database()
     
     def cmd_status(self, args):
@@ -44,7 +44,7 @@ class FinLoomCLI:
         
         # Environment
         print(f"Environment: {self.config.environment.value}")
-        print(f"Database: {self.config.get('storage.database_path')}")
+        print(f"Database: {self.config.database_path}")
         print()
         
         # Database statistics

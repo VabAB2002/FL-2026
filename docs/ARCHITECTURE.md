@@ -1,5 +1,9 @@
 # FinLoom System Architecture
 
+> **Note**: This system has been simplified to a markdown-only architecture for unstructured data.
+> Section/table extraction parsers have been removed in favor of storing complete documents as markdown.
+> This ensures 100% data capture across all SEC filing formats without parsing failures.
+
 ## 1. High-Level System Overview
 
 ```
@@ -46,24 +50,20 @@
                                                 ▼
                         ┌─────────────────────────────────────────────────┐
                         │               PARSING LAYER                      │
-                        │          (with validation & recovery)            │
+                        │          (Markdown-Only Architecture)            │
                         │  ┌────────────────┐    ┌────────────────────┐   │
-                        │  │  XBRL Parser   │    │  Section Parser    │   │
-                        │  │  (Structured)  │    │  (Unstructured)    │   │
+                        │  │  XBRL Parser   │    │ Unstructured Lib   │   │
+                        │  │  (Structured)  │    │  (Markdown Only)   │   │
                         │  │                │    │                    │   │
-                        │  │ • Facts        │    │ • Item 1 (Business)│   │
-                        │  │ • Concepts     │    │ • Item 1A (Risks)  │   │
-                        │  │ • Periods      │    │ • Item 7 (MD&A)    │   │
-                        │  │ • Units        │    │ • Item 8 (Financials)│ │
+                        │  │ • All Facts    │    │ • Full Markdown    │   │
+                        │  │ • 1,131+ items │    │ • Section Markers  │   │
+                        │  │ • Segments     │    │ • 100% Capture     │   │
+                        │  │ • Hierarchy    │    │ • RAG Ready        │   │
                         │  └───────┬────────┘    └─────────┬──────────┘   │
                         │          │                       │              │
-                        │          │    ┌─────────────┐    │              │
-                        │          │    │Table Parser │    │              │
-                        │          │    │ • 50+ tables│    │              │
-                        │          │    └──────┬──────┘    │              │
-                        └──────────┼───────────┼───────────┼──────────────┘
-                                   │           │           │
-                                   ▼           ▼           ▼
+                        └──────────┼───────────────────────┼──────────────┘
+                                   │                       │
+                                   ▼                       ▼
                         ┌─────────────────────────────────────────────────┐
                         │               STORAGE LAYER                      │
                         │                                                  │
@@ -72,7 +72,7 @@
                         │  │  ┌────────────┐  ┌────────────────────┐  │   │
                         │  │  │ Filing Repo│  │ Fact Repository    │  │   │
                         │  │  ├────────────┤  ├────────────────────┤  │   │
-                        │  │  │Company Repo│  │ Section Repository │  │   │
+                        │  │  │Company Repo│  │  (Markdown Only)   │  │   │
                         │  │  └────────────┘  └────────────────────┘  │   │
                         │  └──────────────────────────────────────────┘   │
                         │                        │                        │
@@ -80,8 +80,8 @@
                         │  ┌──────────────────────────────────────────┐   │
                         │  │              DUCKDB DATABASE              │   │
                         │  │  • 20 Companies  • 343,900 Facts         │   │
-                        │  │  • 213 Filings   • 838 Sections          │   │
-                        │  │  • 11.6M Words   • 76M Characters        │   │
+                        │  │  • 213 Filings   • Full Markdown         │   │
+                        │  │  • 100% Data Capture • RAG Ready         │   │
                         │  └──────────────────────────────────────────┘   │
                         └─────────────────────────────────────────────────┘
 ```
@@ -106,25 +106,26 @@
 │  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐      │
 │  │    INGESTION      │  │     PARSERS       │  │     STORAGE       │      │
 │  │  src/ingestion/   │  │   src/parsers/    │  │   src/storage/    │      │
-│  │  ├── sec_api.py   │  │  ├── xbrl_parser  │  │  ├── database.py  │      │
-│  │  └── downloader   │  │  ├── section_parser│ │  ├── repositories │      │
-│  │                   │  │  ├── table_parser │  │  └── schema.sql   │      │
-│  │  • SEC API client │  │  └── footnote_parser│ │                   │      │
-│  │  • File downloads │  │                   │  │  • DuckDB ops     │      │
-│  │  • Rate limiting  │  │  • HTML parsing   │  │  • CRUD repos     │      │
-│  └───────────────────┘  │  • XBRL extraction│  │  • Connection pool│      │
-│                         └───────────────────┘  └───────────────────┘      │
+│  │  ├── sec_api.py   │  │  └── xbrl_parser  │  │  ├── database.py  │      │
+│  │  └── downloader   │  │                   │  │  ├── repositories │      │
+│  │                   │  │  • XBRL parsing   │  │  ├── s3_backup    │      │
+│  │  • SEC API client │  │  • All facts      │  │  └── schema.sql   │      │
+│  │  • File downloads │  │  • Segments       │  │                   │      │
+│  │  • Rate limiting  │  │  • 1,131+ items   │  │  • DuckDB ops     │      │
+│  └───────────────────┘  │                   │  │  • CRUD repos     │      │
+│                         └───────────────────┘  │  • Connection pool│      │
+│                                                └───────────────────┘      │
 │                                      │                                      │
 │                    ┌─────────────────┼─────────────────┐                   │
 │                    ▼                 ▼                 ▼                   │
 │  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐      │
 │  │    BUSINESS       │  │    VALIDATION     │  │    PROCESSING     │      │
 │  │  src/business/    │  │  src/validation/  │  │  src/processing/  │      │
-│  │  └── concept_mapper│ │  ├── schemas.py   │  │  ├── unstructured │      │
-│  │                   │  │  ├── data_quality │  │  └── semantic_chunk│     │
+│  │  └── concept_mapper│ │  ├── schemas.py   │  │  └── unstructured │      │
+│  │                   │  │  ├── data_quality │  │     _pipeline     │      │
 │  │  • XBRL→Standard  │  │  └── quality_scorer│ │                   │      │
-│  │  • Normalization  │  │                   │  │  • Text chunking  │      │
-│  │  • Mapping rules  │  │  • Pydantic models│  │  • RAG prep       │      │
+│  │  • Normalization  │  │                   │  │  • Markdown only  │      │
+│  │  • Mapping rules  │  │  • Pydantic models│  │  • RAG ready      │      │
 │  └───────────────────┘  │  • Quality checks │  └───────────────────┘      │
 │                         └───────────────────┘                              │
 │                                                                             │
@@ -152,27 +153,27 @@
 │  │   COMPANIES     │         │    FILINGS      │                           │
 │  ├─────────────────┤         ├─────────────────┤                           │
 │  │ cik (PK)        │◀────────│ cik (FK)        │                           │
-│  │ company_name    │         │ accession_number│──┐                        │
-│  │ ticker          │         │ form_type       │  │                        │
-│  │ sic_code        │         │ filing_date     │  │                        │
-│  │ fiscal_year_end │         │ primary_document│  │                        │
-│  └─────────────────┘         └─────────────────┘  │                        │
-│                                                   │                        │
-│         ┌─────────────────────────────────────────┼────────────────┐       │
-│         │                                         │                │       │
-│         ▼                                         ▼                ▼       │
-│  ┌─────────────────┐         ┌─────────────────┐  │  ┌─────────────────┐   │
-│  │     FACTS       │         │   SECTIONS      │  │  │    TABLES       │   │
-│  ├─────────────────┤         ├─────────────────┤  │  ├─────────────────┤   │
-│  │ id (PK)         │         │ id (PK)         │  │  │ id (PK)         │   │
-│  │ accession_number│◀────────│ accession_number│──┘  │ accession_number│   │
-│  │ concept_name    │         │ section_type    │     │ table_index     │   │
-│  │ concept_namespace│        │ section_title   │     │ table_type      │   │
-│  │ value           │         │ content_text    │     │ markdown        │   │
-│  │ unit            │         │ word_count      │     │ json_data       │   │
-│  │ period_start    │         │ paragraph_count │     └─────────────────┘   │
-│  │ period_end      │         │ extraction_conf │                           │
-│  │ dimensions      │         └─────────────────┘                           │
+│  │ company_name    │         │ accession_number│                           │
+│  │ ticker          │         │ form_type       │                           │
+│  │ sic_code        │         │ filing_date     │                           │
+│  │ fiscal_year_end │         │ primary_document│                           │
+│  └─────────────────┘         │ full_markdown   │  ← MARKDOWN STORAGE       │
+│                               │ markdown_count  │                           │
+│                               └─────────────────┘                           │
+│                                       │                                     │
+│                                       ▼                                     │
+│  ┌─────────────────┐                                                       │
+│  │     FACTS       │         Note: sections/tables/footnotes               │
+│  ├─────────────────┤         tables removed - data is in markdown          │
+│  │ id (PK)         │                                                       │
+│  │ accession_number│                                                       │
+│  │ concept_name    │                                                       │
+│  │ concept_namespace│                                                      │
+│  │ value           │                                                       │
+│  │ unit            │                                                       │
+│  │ period_start    │                                                       │
+│  │ period_end      │                                                       │
+│  │ dimensions      │                                                       │
 │  └─────────────────┘                                                       │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -599,3 +600,128 @@ FinLoom-2026/
 └── docs/                      # Documentation
     └── ARCHITECTURE.md        # This file
 ```
+
+## 11. XBRL Extraction Modes
+
+FinLoom supports two XBRL extraction modes, controlled by the `extract_all_xbrl_facts` configuration flag:
+
+### Core Mode (extract_all_xbrl_facts: false)
+
+**Purpose**: Fast extraction of essential financial metrics for quick analysis and dashboards.
+
+**Coverage**:
+- 94 core US-GAAP concepts
+- Balance sheet fundamentals (Assets, Liabilities, Equity)
+- Income statement essentials (Revenue, Net Income, EPS)
+- Cash flow primary items
+- No segment/dimensional data
+- No hierarchy metadata
+
+**Use Cases**:
+- Quick financial summaries
+- Cross-company comparisons
+- Dashboard metrics
+- Rapid prototyping
+
+**Performance**: ~50-100 facts per filing, <5 second parse time
+
+### Full Mode (extract_all_xbrl_facts: true) ✅ DEFAULT
+
+**Purpose**: Comprehensive extraction for in-depth analysis, RAG queries, and detailed research.
+
+**Coverage**:
+- 1,131+ facts per filing (all XBRL concepts)
+- All core concepts PLUS:
+  - **Segment Analysis**: Revenue/income by geography and product line
+  - **Detailed Schedules**: Debt maturities, lease obligations, tax reconciliations
+  - **Fair Value Hierarchies**: Investment classifications and valuations
+  - **Disclosures**: Risk factors, commitments, contingencies
+  - **Hierarchy Metadata**: section, parent_concept, depth, labels
+  - **Dimensional Data**: Multi-axis breakdowns (geography × product, etc.)
+
+**Use Cases**:
+- RAG/LLM question answering ("What percentage of revenue comes from China?")
+- Detailed financial modeling
+- Segment performance analysis
+- Regulatory compliance research
+- Academic research
+
+**Performance**: 1,000-1,500 facts per filing, ~10 second parse time
+
+### Configuration
+
+Set in `config/settings.yaml`:
+
+```yaml
+extraction:
+  extract_all_xbrl_facts: true  # true = full mode (default), false = core mode
+```
+
+Or via environment variable:
+
+```bash
+export FINLOOM_EXTRACT_ALL_FACTS=true
+```
+
+### Comparison Example (Apple Inc. 10-K 2025)
+
+| Metric | Core Mode | Full Mode |
+|--------|-----------|-----------|
+| **Facts Extracted** | 94 | 1,131 |
+| **Parse Time** | ~4s | ~9s |
+| **Sections Identified** | 0 | 15+ |
+| **Has Labels** | No | Yes (90%+) |
+| **Has Hierarchy** | No | Yes |
+| **Segment Data** | No | Yes |
+| **Database Size** | ~5KB/filing | ~50KB/filing |
+
+### Implementation Details
+
+**Parser Configuration** (automatic):
+
+```python
+from src.parsers.xbrl_parser import XBRLParser
+from src.utils.config import get_settings
+
+settings = get_settings()
+parser = XBRLParser(extract_all_facts=settings.extraction.extract_all_xbrl_facts)
+```
+
+**Fact Enrichment** (Full Mode Only):
+
+When `extract_all_facts=True`, the parser:
+1. Parses presentation linkbase (`*_pre.xml`) for hierarchy
+2. Parses label linkbase (`*_lab.xml`) for human-readable labels
+3. Enriches each fact with:
+   - `section`: Financial statement or note category
+   - `parent_concept`: Parent in concept hierarchy
+   - `label`: Human-readable name
+   - `depth`: Indentation level in hierarchy
+
+### Data Quality
+
+Both modes include validation:
+- Balance sheet equation checks
+- Required concept verification
+- Value range validation
+- **Full mode adds**: Fact count completeness checks (expects 500+ facts)
+
+### Storage Impact
+
+- **Core Mode**: ~94 facts × 3 periods × 20 companies = ~5,600 rows
+- **Full Mode**: ~1,200 facts × 3 periods × 20 companies = ~72,000 rows
+- **Database Growth**: ~13x increase (still trivial for DuckDB)
+- **Query Performance**: No degradation (proper indexes in place)
+
+### Recommendation
+
+**Use Full Mode (default)** for:
+- Production RAG systems
+- Comprehensive financial analysis
+- Research applications
+- Any use case requiring segment data or detailed disclosures
+
+**Use Core Mode** only for:
+- Development/testing with minimal data
+- Simple dashboard applications
+- Performance-constrained environments

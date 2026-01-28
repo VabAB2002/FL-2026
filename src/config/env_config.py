@@ -1,19 +1,37 @@
 """
 Environment-specific configuration management.
 
-Supports development, staging, and production environments.
+DEPRECATED: This module is deprecated. Use src.utils.config instead.
+
+Preferred usage:
+    from src.utils.config import get_config
+    config = get_config()
+
+This module is kept for backward compatibility only.
 """
 
 import os
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+from dotenv import load_dotenv
+
+# Load .env file immediately
+load_dotenv()
 
 from ..utils.logger import get_logger
 
 logger = get_logger("finloom.config.env_config")
+
+# Deprecation warning
+warnings.warn(
+    "src.config.env_config is deprecated. Use src.utils.config instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 
 class Environment(Enum):

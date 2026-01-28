@@ -7,13 +7,13 @@ from .repositories import (
     DuckDBFactRepository,
     DuckDBFilingRepository,
     DuckDBNormalizedMetricsRepository,
-    DuckDBSectionRepository,
+    # DuckDBSectionRepository removed - markdown-only architecture
     get_company_repository,
     get_fact_repository,
     get_filing_repository,
     get_mapping_repository,
     get_metrics_repository,
-    get_section_repository,
+    # get_section_repository removed - markdown-only architecture
 )
 from .s3_backup import S3Backup
 from .staging_manager import StagingManager
@@ -27,13 +27,13 @@ __all__ = [
     "get_filing_repository",
     "get_fact_repository",
     "get_company_repository",
-    "get_section_repository",
+    # "get_section_repository" removed - markdown-only architecture
     "get_metrics_repository",
     "get_mapping_repository",
     "DuckDBFilingRepository",
     "DuckDBFactRepository",
     "DuckDBCompanyRepository",
-    "DuckDBSectionRepository",
+    # "DuckDBSectionRepository" removed - markdown-only architecture
     "DuckDBNormalizedMetricsRepository",
     # Other
     "S3Backup",
