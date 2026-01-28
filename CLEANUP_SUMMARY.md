@@ -1,11 +1,13 @@
 # FinLoom Codebase Cleanup Summary
 
 **Date:** January 28, 2026  
-**Status:** ✅ Complete
+**Status:** ✅ Complete (Updated: Phase 9 Added)
 
 ## Overview
 
 Comprehensive codebase cleanup completed to improve modularity, remove unused code, consolidate duplicate functionality, and establish clear architectural patterns.
+
+**Update:** Added Phase 9 to reorganize vendored Unstructured library into proper `src/vendor/` structure.
 
 ## Changes by Phase
 
@@ -296,6 +298,33 @@ python finloom.py status --verify-integrity
 - **Less confusion:** Single configuration system
 - **Better testing:** Mockable repository patterns
 
+## Phase 9: Vendor Library Reorganization ✅
+
+**Moved Unstructured library to proper vendor structure:**
+
+**Changes:**
+- Created `src/vendor/` directory for vendored third-party code
+- Moved `unstructured-main/unstructured/` → `src/vendor/unstructured/`
+- Updated `src/processing/unstructured_pipeline.py`:
+  - Removed sys.path manipulation (lines 19-22)
+  - Changed imports to use relative imports: `from ..vendor.unstructured import ...`
+  - Cleaner, more maintainable code
+- Created `src/vendor/__init__.py` and `src/vendor/README.md` with documentation
+- Deleted old `unstructured-main/` directory from root
+
+**Benefits:**
+- Follows Python conventions for vendored code
+- Eliminates sys.path hacks (anti-pattern)
+- Better IDE support (autocomplete, navigation)
+- Clearer separation of our code vs. third-party code
+- More professional and modular structure
+
+**Files affected:**
+- New: `src/vendor/__init__.py`, `src/vendor/README.md`
+- Moved: `unstructured-main/unstructured/` → `src/vendor/unstructured/`
+- Modified: `src/processing/unstructured_pipeline.py`, `src/__init__.py`, `docs/ARCHITECTURE.md`
+- Deleted: `unstructured-main/` directory
+
 ## Lessons Learned
 
 1. **Keep temporary files out of git** - Use .gitignore patterns proactively
@@ -303,16 +332,19 @@ python finloom.py status --verify-integrity
 3. **Consolidate duplication early** - Three similar scripts indicate need for unified tool
 4. **Deprecate gracefully** - Keep backward compatibility while migrating
 5. **Clean as you go** - Regular cleanup prevents accumulation
+6. **Follow conventions** - Use `vendor/` for third-party code, not root-level directories
 
 ## References
 
 - [Repository Pattern Guide](docs/REPOSITORY_PATTERN.md)
 - [Architecture Documentation](docs/ARCHITECTURE.md)
 - [Scripts Documentation](scripts/README.md)
-- [Unstructured Library](unstructured-main/README.md)
+- [Vendor Libraries](src/vendor/README.md)
+- [Unstructured Library](src/vendor/unstructured/README.md)
 
 ---
 
 **Cleanup Lead:** AI Assistant  
 **Completion Date:** January 28, 2026  
+**Last Update:** Phase 9 - Vendor reorganization  
 **Next Review:** Quarterly (April 2026)

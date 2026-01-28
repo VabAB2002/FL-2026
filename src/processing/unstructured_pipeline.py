@@ -1,11 +1,15 @@
 """
 Unstructured data processing pipeline.
 
-Simplified markdown-only extraction with:
+Uses vendored Unstructured library (src/vendor/unstructured) for HTML-to-Markdown
+conversion. Provides:
 - Circuit breaker pattern
 - Metrics and tracing
 - Error handling
 - Transactional storage
+
+Note: The unstructured library uses absolute imports internally, so we add
+src/vendor to sys.path to enable 'from unstructured import ...' to work.
 """
 
 import sys
@@ -16,10 +20,11 @@ from typing import Optional
 
 import duckdb
 
-# Add unstructured library to path
-UNSTRUCTURED_PATH = Path(__file__).parent.parent.parent / "unstructured-main"
-if str(UNSTRUCTURED_PATH) not in sys.path:
-    sys.path.insert(0, str(UNSTRUCTURED_PATH))
+# Add vendor directory to path for unstructured library
+# The library uses absolute imports internally (from unstructured.x.y import z)
+VENDOR_PATH = Path(__file__).parent.parent / "vendor"
+if str(VENDOR_PATH) not in sys.path:
+    sys.path.insert(0, str(VENDOR_PATH))
 
 from unstructured.partition.html import partition_html
 from unstructured.staging.base import elements_to_md

@@ -126,17 +126,17 @@
 │  │  • XBRL→Standard  │  │  └── quality_scorer│ │                   │      │
 │  │  • Normalization  │  │                   │  │  • Markdown only  │      │
 │  │  • Mapping rules  │  │  • Pydantic models│  │  • RAG ready      │      │
-│  └───────────────────┘  │  • Quality checks │  └───────────────────┘      │
-│                         └───────────────────┘                              │
+│  └───────────────────┘  │  • Quality checks │  │  • Uses vendor/   │      │
+│                         └───────────────────┘  └───────────────────┘      │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      INFRASTRUCTURE LAYER                            │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │   │
-│  │  │src/config/  │  │ src/utils/  │  │src/caching/ │  │src/monitoring│ │  │
-│  │  │• env_config │  │ • logger    │  │• redis_cache│  │• health      │ │  │
-│  │  │• settings   │  │ • config    │  │• query_cache│  │• tracing     │ │  │
-│  │  │             │  │ • rate_limit│  │             │  │• circuit_brkr│ │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘ │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │   │
+│  │  │src/config│  │src/utils/│  │src/caching│ │monitoring│  │vendor/ │ │  │
+│  │  │• settings│  │• logger  │  │• redis   │  │• health  │  │• unstru│ │  │
+│  │  │• extract │  │• config  │  │• query   │  │• tracing │  │  ctured│ │  │
+│  │  │          │  │• rate_lmt│  │          │  │• circuit │  │        │ │  │
+│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └────────┘ │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -388,6 +388,7 @@ For filings that failed extraction or need reprocessing:
 ```python
 from src.processing.unstructured_pipeline import UnstructuredDataPipeline
 
+# Uses vendored unstructured library (src/vendor/unstructured)
 pipeline = UnstructuredDataPipeline(db_path)
 result = pipeline.reprocess_filing(
     accession_number="0000320193-23-000077",
@@ -571,6 +572,9 @@ FinLoom-2026/
 │   │
 │   ├── processing/            # Text processing
 │   │   └── unstructured_pipeline.py
+│   │
+│   ├── vendor/                # Vendored third-party libraries
+│   │   └── unstructured/     # HTML-to-Markdown conversion
 │   │
 │   ├── caching/               # Redis caching
 │   │   └── redis_cache.py
