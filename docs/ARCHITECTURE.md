@@ -107,27 +107,26 @@
 │  │    INGESTION      │  │     PARSERS       │  │     STORAGE       │      │
 │  │  src/ingestion/   │  │   src/parsers/    │  │   src/storage/    │      │
 │  │  ├── sec_api.py   │  │  └── xbrl_parser  │  │  ├── database.py  │      │
-│  │  └── downloader   │  │                   │  │  ├── repositories │      │
-│  │                   │  │  • XBRL parsing   │  │  ├── s3_backup    │      │
-│  │  • SEC API client │  │  • All facts      │  │  └── schema.sql   │      │
-│  │  • File downloads │  │  • Segments       │  │                   │      │
-│  │  • Rate limiting  │  │  • 1,131+ items   │  │  • DuckDB ops     │      │
-│  └───────────────────┘  │                   │  │  • CRUD repos     │      │
-│                         └───────────────────┘  │  • Connection pool│      │
+│  │  └── downloader   │  │                   │  │  ├── s3_backup    │      │
+│  │                   │  │  • XBRL parsing   │  │  └── schema.sql   │      │
+│  │  • SEC API client │  │  • All facts      │  │                   │      │
+│  │  • File downloads │  │  • Segments       │  │  • DuckDB ops     │      │
+│  │  • Rate limiting  │  │  • 1,131+ items   │  │  • Connection pool│      │
+│  └───────────────────┘  └───────────────────┘  └───────────────────┘      │
 │                                                └───────────────────┘      │
 │                                      │                                      │
 │                    ┌─────────────────┼─────────────────┐                   │
 │                    ▼                 ▼                 ▼                   │
 │  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐      │
-│  │    BUSINESS       │  │    VALIDATION     │  │    PROCESSING     │      │
-│  │  src/business/    │  │  src/validation/  │  │  src/processing/  │      │
-│  │  └── concept_mapper│ │  ├── schemas.py   │  │  └── unstructured │      │
-│  │                   │  │  ├── data_quality │  │     _pipeline     │      │
-│  │  • XBRL→Standard  │  │  └── quality_scorer│ │                   │      │
-│  │  • Normalization  │  │                   │  │  • Markdown only  │      │
-│  │  • Mapping rules  │  │  • Pydantic models│  │  • RAG ready      │      │
-│  └───────────────────┘  │  • Quality checks │  │  • Uses vendor/   │      │
-│                         └───────────────────┘  └───────────────────┘      │
+│  │    VALIDATION     │  │    PROCESSING     │  │     (empty)       │      │
+│  │  src/validation/  │  │  src/processing/  │  │                   │      │
+│  │  ├── schemas.py   │  │  └── unstructured │  │                   │      │
+│  │  └── data_quality │  │     _pipeline     │  │                   │      │
+│  │                   │  │                   │  │                   │      │
+│  │  • Pydantic models│  │  • Markdown only  │  │                   │      │
+│  │  • Quality checks │  │  • RAG ready      │  │                   │      │
+│  └───────────────────┘  │  • Uses vendor/   │  └───────────────────┘      │
+│                         └───────────────────┘                             │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                      INFRASTRUCTURE LAYER                            │   │
@@ -195,39 +194,31 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 5. Repository Pattern
+## 5. Database Access
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          REPOSITORY PATTERN                                  │
+│                          DATABASE ACCESS LAYER                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    PROTOCOLS (src/core/repository.py)                │   │
+│  │                    Database Class (src/storage/database.py)          │   │
 │  │                                                                      │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐      │   │
-│  │  │ FilingRepository│  │ FactRepository  │  │CompanyRepository│      │   │
-│  │  ├─────────────────┤  ├─────────────────┤  ├─────────────────┤      │   │
-│  │  │ get_filing()    │  │ get_facts()     │  │ get_company()   │      │   │
-│  │  │ save_filing()   │  │ save_facts()    │  │ save_company()  │      │   │
-│  │  │ list_filings()  │  │ get_for_filing()│  │ list_companies()│      │   │
-│  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘      │   │
-│  └───────────┼────────────────────┼────────────────────┼────────────────┘   │
-│              │                    │                    │                    │
-│              ▼                    ▼                    ▼                    │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │              IMPLEMENTATIONS (src/storage/repositories.py)           │   │
-│  │                                                                      │   │
-│  │  ┌───────────────────┐  ┌───────────────────┐  ┌─────────────────┐  │   │
-│  │  │DuckDBFilingRepo   │  │DuckDBFactRepo     │  │DuckDBCompanyRepo│  │   │
-│  │  └─────────┬─────────┘  └─────────┬─────────┘  └────────┬────────┘  │   │
-│  │            │                      │                     │           │   │
-│  │            └──────────────────────┼─────────────────────┘           │   │
+│  │  ┌─────────────────────────────────────────────────────────────┐    │   │
+│  │  │                   CRUD Operations                            │    │   │
+│  │  │  • upsert_company()      • get_filing()                     │    │   │
+│  │  │  • upsert_filing()       • get_unprocessed_filings()        │    │   │
+│  │  │  • insert_fact()         • execute_query()                  │    │   │
+│  │  │  • update_filing_status()                                   │    │   │
+│  │  └─────────────────────────────────────────────────────────────┘    │   │
+│  │                                   │                                 │   │
 │  │                                   ▼                                 │   │
-│  │                        ┌─────────────────────┐                      │   │
-│  │                        │   Database Class    │                      │   │
-│  │                        │  (Connection Pool)  │                      │   │
-│  │                        └──────────┬──────────┘                      │   │
+│  │  ┌─────────────────────────────────────────────────────────────┐    │   │
+│  │  │                Connection Management                         │    │   │
+│  │  │  • Connection pooling                                       │    │   │
+│  │  │  • Transaction support                                      │    │   │
+│  │  │  • Context manager (with statement)                         │    │   │
+│  │  └─────────────────────────────────────────────────────────────┘    │   │
 │  │                                   │                                 │   │
 │  │                                   ▼                                 │   │
 │  │                        ┌─────────────────────┐                      │   │
@@ -236,11 +227,13 @@
 │  │                        └─────────────────────┘                      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  SINGLETON ACCESS:                                                          │
+│  USAGE:                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  get_filing_repository()  →  DuckDBFilingRepository (cached)        │   │
-│  │  get_fact_repository()    →  DuckDBFactRepository (cached)          │   │
-│  │  get_company_repository() →  DuckDBCompanyRepository (cached)       │   │
+│  │  from src.storage.database import Database                           │   │
+│  │                                                                      │   │
+│  │  with Database() as db:                                              │   │
+│  │      db.upsert_company(cik="...", company_name="...", ticker="...")  │   │
+│  │      facts = db.execute_query("SELECT * FROM facts WHERE ...")       │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -472,66 +465,29 @@ python finloom.py db clean-duplicates --table normalized_financials --execute
 - Uses transactions (safe rollback on error)
 - Logs all operations
 
-### 8.4 System Verification and Health Checks
-
-The `DatabaseHealthChecker` class provides comprehensive system verification:
-
-**System Integrity Verification:**
-```python
-from src.monitoring.health_checker import DatabaseHealthChecker
-
-checker = DatabaseHealthChecker(db_path)
-report = checker.verify_system_integrity()
-
-# Report includes:
-# - Database schema validation
-# - Extraction progress statistics
-# - Top processed companies
-# - Quality metrics (confidence scores)
-# - Metadata features (tables, lists, parts)
-# - Hierarchical chunking distribution
-# - Database health (size, read-only status)
-```
+### 8.4 System Status
 
 **CLI Command:**
 ```bash
-# Basic system status
+# Basic system status (database stats, company counts, etc.)
 python finloom.py status
-
-# Comprehensive system verification (production readiness check)
-python finloom.py status --verify-integrity
 ```
 
-**Verification Checks:**
-1. **Schema**: Validates all required tables exist
-2. **Extraction Progress**: Shows processing rates and coverage
-3. **Top Companies**: Lists companies with most processed filings
-4. **Quality Metrics**: Average confidence scores, min/max ranges
-5. **Features**: Sections with tables, lists, part labels
-6. **Chunking**: Hierarchical chunk distribution (Section/Topic/Paragraph)
-7. **Database Health**: Size, read-only status, integrity
+**Status Display:**
+- Environment and configuration
+- Database statistics (companies, filings, facts, metrics)
+- Database size
+- Feature flags
 
-**Health Status Levels:**
-- `healthy` ✅ - System is production ready
-- `warning` ⚠️ - Has warnings, review recommended
-- `critical` ❌ - Has issues, fixes required
+### 8.5 Simplified Architecture
 
-### 8.5 Migration from Workaround Scripts
-
-**Deprecated Scripts (Removed):**
-- `scripts/fix_missing_sections.py` → Use `finloom recovery reprocess`
-- `scripts/clean_duplicates.py` → Use `finloom db clean-duplicates --execute`
-- `scripts/verify_system.py` → Use `finloom status --verify-integrity`
-
-The root causes that necessitated workaround scripts have been fixed:
-- ✅ Pipeline now validates section extraction
-- ✅ Built-in recovery method with proper error handling
-- ✅ Built-in duplicate detection and removal in Database class
-- ✅ Built-in comprehensive system verification
-- ✅ CLI commands for all operational use
-- ✅ Metrics and logging integration
-- ✅ Transaction support for data safety
-- ✅ Production-ready health checks
+The codebase has been streamlined to focus on core data ingestion:
+- ✅ SEC data download and storage
+- ✅ XBRL parsing (structured data)
+- ✅ Markdown extraction (unstructured data)
+- ✅ Basic validation during ingestion
+- ✅ Recovery for failed extractions
+- ✅ Duplicate detection and removal
 
 ## 9. File Structure
 
@@ -563,9 +519,6 @@ FinLoom-2026/
 │   │   ├── repositories.py    # Repository implementations
 │   │   └── schema.sql         # Database schema
 │   │
-│   ├── business/              # Business logic
-│   │   └── concept_mapper.py  # XBRL→Standard mapping
-│   │
 │   ├── validation/            # Data validation
 │   │   ├── schemas.py         # Pydantic models
 │   │   └── data_quality.py    # Quality checks
@@ -580,7 +533,6 @@ FinLoom-2026/
 │   │   └── redis_cache.py
 │   │
 │   ├── monitoring/            # Observability
-│   │   ├── health.py          # Health checks
 │   │   └── tracing.py         # OpenTelemetry
 │   │
 │   ├── config/                # Configuration

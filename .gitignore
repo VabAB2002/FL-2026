@@ -1,71 +1,47 @@
-# Environment and secrets
-.env
-.env.local
-.env.*.local
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
+env/
 venv/
 ENV/
-env/
-.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 
-# IDE
-.idea/
+# IDEs
 .vscode/
+.idea/
+.cursor/
 *.swp
 *.swo
 *~
 .DS_Store
 
-# Data directories (large files)
-data/raw/
-data/processed/
-data/database/
-data/checkpoints/
-
 # Logs
-logs/*.log*
-backfill_output.log
-*.log
-
-# Test artifacts
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Keep directory structure
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!data/database/.gitkeep
+logs/
 !logs/.gitkeep
-*.duckdb
-*.duckdb.backup*
-*.backup
-*.wal
+
+# Data (large files)
+data/raw/
+data/database/*.duckdb*
+data/extracted_entities/*.json
+!data/.gitkeep
+
+# Environment
+.env
+.env.local
+
+# Neo4j
+.neo4j/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# OS
+Thumbs.db

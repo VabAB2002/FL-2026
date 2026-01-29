@@ -1,33 +1,22 @@
 """
 Unstructured data processing pipeline.
 
-Uses vendored Unstructured library (src/vendor/unstructured) for HTML-to-Markdown
-conversion. Provides:
+Uses sec2md library for SEC EDGAR HTML-to-Markdown conversion with table preservation.
+Provides:
 - Circuit breaker pattern
 - Metrics and tracing
 - Error handling
 - Transactional storage
-
-Note: The unstructured library uses absolute imports internally, so we add
-src/vendor to sys.path to enable 'from unstructured import ...' to work.
 """
 
-import sys
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import duckdb
-
-# Add vendor directory to path for unstructured library
-# The library uses absolute imports internally (from unstructured.x.y import z)
-VENDOR_PATH = Path(__file__).parent.parent / "vendor"
-if str(VENDOR_PATH) not in sys.path:
-    sys.path.insert(0, str(VENDOR_PATH))
-
-from unstructured.partition.html import partition_html
-from unstructured.staging.base import elements_to_md
+import sec2md
 
 from ..utils.logger import get_logger
 from ..monitoring.circuit_breaker import CircuitBreaker
@@ -56,7 +45,8 @@ class UnstructuredDataPipeline:
     Simplified pipeline for markdown extraction.
     
     Features:
-    - Direct markdown extraction using unstructured library
+    - Direct markdown extraction using sec2md library
+    - Table preservation with markdown pipe format
     - Circuit breaker for fault tolerance
     - Prometheus metrics
     - Transactional storage
@@ -72,6 +62,9 @@ class UnstructuredDataPipeline:
         """
         self.db_path = db_path
         
+        # Get user agent from environment (required by SEC)
+        self.user_agent = os.getenv('SEC_API_USER_AGENT', 'FinLoom/1.0 contact@example.com')
+        
         # Circuit breaker for fault tolerance
         self.circuit_breaker = CircuitBreaker(
             failure_threshold=5,
@@ -79,7 +72,7 @@ class UnstructuredDataPipeline:
             expected_exception=Exception,
         )
         
-        logger.info("Unstructured data pipeline initialized (markdown-only mode)")
+        logger.info(f"Unstructured data pipeline initialized (sec2md converter, user_agent={self.user_agent})")
 
     def _find_primary_document(self, filing_path: Path) -> Optional[Path]:
         """Find the primary HTML document in a filing."""
@@ -132,36 +125,59 @@ class UnstructuredDataPipeline:
             logger.warning(f"Failed to get ticker for {accession_number}: {e}")
             return ""
 
-    def _parse_html_unstructured(self, html_path: Path) -> list:
+    def _convert_html_to_markdown(self, html_path: Path) -> tuple[str, list[dict]]:
         """
-        Parse HTML file using unstructured library.
+        Convert HTML to markdown and extract sections using sec2md.
         
         Args:
-            html_path: Path to the HTML file.
+            html_path: Path to HTML file
             
         Returns:
-            List of Element objects.
+            Tuple of (markdown string, list of section dicts)
         """
         try:
-            # Check for SEC SGML headers
+            # Read HTML content
             with open(html_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
-            # Simple extraction of text between <TEXT> tags if present
+            # Strip SEC SGML headers if present
             if "<TYPE>10-K" in content and "<TEXT>" in content:
                 start = content.find("<TEXT>") + 6
                 end = content.find("</TEXT>")
                 if start > 5 and end > start:
-                    html_content = content[start:end]
-                    logger.debug(f"Stripped SEC SGML headers, parsing {len(html_content)} bytes")
-                    return partition_html(text=html_content)
+                    content = content[start:end]
+                    logger.debug(f"Stripped SEC SGML headers")
             
-            # Fallback to standard file parsing
-            return partition_html(filename=str(html_path))
+            # Get pages with section structure
+            pages = sec2md.convert_to_markdown(
+                content,
+                user_agent=self.user_agent,
+                return_pages=True  # Get structured pages instead of string
+            )
+            
+            # Extract sections
+            sections = sec2md.extract_sections(pages, filing_type="10-K")
+            
+            # Convert pages to markdown string for storage
+            markdown = "\n\n".join(page.content for page in pages)
+            
+            # Prepare sections data
+            sections_data = []
+            for section in sections:
+                section_markdown = "\n\n".join(p.content for p in section.pages)
+                sections_data.append({
+                    "item": section.item,
+                    "item_title": section.item_title,
+                    "markdown": section_markdown,
+                    "word_count": len(section_markdown.split())
+                })
+            
+            logger.debug(f"Extracted {len(sections_data)} sections")
+            return markdown, sections_data
             
         except Exception as e:
-            logger.warning(f"Failed to parse with simplified logic: {e}. Falling back to standard parsing.")
-            return partition_html(filename=str(html_path))
+            logger.error(f"sec2md conversion failed: {e}")
+            raise
 
     def process_filing(
         self,
@@ -203,14 +219,11 @@ class UnstructuredDataPipeline:
                     error_message="No HTML document found"
                 )
 
-            # Extract markdown using unstructured library
+            # Extract markdown using sec2md
             try:
-                logger.debug(f"Parsing HTML with unstructured: {html_file}")
-                elements = self._parse_html_unstructured(html_file)
-                logger.debug(f"Extracted {len(elements)} elements from HTML")
-                
-                # Convert to markdown
-                full_markdown = elements_to_md(elements)
+                logger.debug(f"Converting HTML with sec2md: {html_file}")
+                full_markdown, sections = self._convert_html_to_markdown(html_file)
+                logger.debug(f"Converted to markdown: {len(full_markdown)} chars, {len(sections)} sections")
                 
                 # Add document header
                 header_lines = []
@@ -227,7 +240,7 @@ class UnstructuredDataPipeline:
                 markdown_word_count = len(full_markdown.split())
                 
                 logger.info(
-                    f"Extracted markdown: {markdown_word_count:,} words"
+                    f"Extracted markdown: {markdown_word_count:,} words, {len(sections)} sections"
                 )
                 
             except Exception as e:
@@ -248,6 +261,11 @@ class UnstructuredDataPipeline:
                 full_markdown,
                 markdown_word_count,
             )
+            
+            # Store sections in database
+            if sections:
+                logger.debug(f"Storing {len(sections)} sections for {accession_number}")
+                self._store_sections(accession_number, sections)
             
             # Calculate quality score (simple: based on word count)
             quality_score = min(100.0, (markdown_word_count / 50000) * 100)
@@ -413,6 +431,50 @@ class UnstructuredDataPipeline:
             
         except Exception as e:
             logger.error(f"Failed to store markdown for {accession_number}: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+    
+    def _store_sections(
+        self,
+        accession_number: str,
+        sections: list[dict],
+    ) -> None:
+        """Store sections in database (transactional, idempotent).
+        
+        Args:
+            accession_number: Filing accession number
+            sections: List of section dicts with item, item_title, markdown, word_count
+        """
+        conn = None
+        try:
+            conn = duckdb.connect(self.db_path)
+            
+            # Delete existing sections for this filing (idempotent)
+            conn.execute("""
+                DELETE FROM filing_sections
+                WHERE accession_number = ?
+            """, [accession_number])
+            
+            # Insert new sections
+            for section in sections:
+                conn.execute("""
+                    INSERT INTO filing_sections 
+                    (id, accession_number, item, item_title, markdown, word_count, created_at)
+                    VALUES (nextval('filing_sections_id_seq'), ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, [
+                    accession_number,
+                    section["item"],
+                    section.get("item_title"),
+                    section["markdown"],
+                    section.get("word_count", 0)
+                ])
+            
+            logger.debug(f"Stored {len(sections)} sections for {accession_number}")
+            
+        except Exception as e:
+            logger.error(f"Failed to store sections for {accession_number}: {e}")
             raise
         finally:
             if conn:

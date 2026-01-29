@@ -3,11 +3,10 @@ Core domain layer for FinLoom.
 
 This module provides:
 - Exception hierarchy for consistent error handling
-- Repository protocols for data access abstraction
 - Shared type definitions
 
 Usage:
-    from src.core import FinLoomError, ParsingError, FilingRepository
+    from src.core import FinLoomError, ParsingError
     from src.core.types import FormType, CIK
 """
 
@@ -34,13 +33,6 @@ from .exceptions import (
     TableParsingError,
     ValidationError,
     XBRLParsingError,
-)
-from .repository import (
-    CompanyRepository,
-    FactRepository,
-    FilingRepository,
-    NormalizedMetricsRepository,
-    SectionRepository,
 )
 from .types import (
     AccessionNumber,
@@ -79,12 +71,6 @@ __all__ = [
     "CacheError",
     "CacheConnectionError",
     "MonitoringError",
-    # Repository protocols
-    "FilingRepository",
-    "FactRepository",
-    "CompanyRepository",
-    "SectionRepository",
-    "NormalizedMetricsRepository",
     # Types
     "FormType",
     "ProcessingStatus",

@@ -66,14 +66,11 @@ cp .env.example .env
 ### Running the Pipeline
 
 ```bash
-# Initial historical data backfill (10 companies × 10 years)
-python scripts/01_backfill_historical.py
+# Backfill data from SEC
+python scripts/backfill_data.py
 
-# Daily updates (run via cron)
-python scripts/02_daily_update.py
-
-# Backup to S3 (optional)
-python scripts/03_backup_to_s3.py
+# Or use make command
+make run-backfill
 ```
 
 ## Project Structure

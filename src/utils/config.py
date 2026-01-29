@@ -120,6 +120,17 @@ class MonitoringConfig(BaseModel):
     alerts_enabled: bool = Field(default=False)
 
 
+class Neo4jConfig(BaseModel):
+    """Configuration for Neo4j graph database."""
+    uri: str = Field(default="bolt://localhost:7687")
+    user: str = Field(default="neo4j")
+    password: str = Field(default="finloom123")
+    database: str = Field(default="neo4j")
+    max_connection_pool_size: int = Field(default=50)
+    connection_timeout: int = Field(default=30)
+    max_transaction_retry_time: int = Field(default=30)
+
+
 class Settings(BaseModel):
     """Main settings container."""
     companies: list[CompanyConfig] = Field(default_factory=list)
@@ -130,6 +141,7 @@ class Settings(BaseModel):
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
     features: dict[str, bool] = Field(default_factory=dict)
 
 
@@ -255,6 +267,19 @@ class AppConfig:
         # Max workers
         if self._env_settings.max_workers:
             self._set_nested("processing.max_workers", self._env_settings.max_workers)
+
+        # Neo4j configuration
+        if neo4j_uri := os.getenv("NEO4J_URI"):
+            self._set_nested("neo4j.uri", neo4j_uri)
+        
+        if neo4j_user := os.getenv("NEO4J_USER"):
+            self._set_nested("neo4j.user", neo4j_user)
+        
+        if neo4j_password := os.getenv("NEO4J_PASSWORD"):
+            self._set_nested("neo4j.password", neo4j_password)
+        
+        if neo4j_database := os.getenv("NEO4J_DATABASE"):
+            self._set_nested("neo4j.database", neo4j_database)
 
     def _set_nested(self, path: str, value: Any) -> None:
         """Set nested dictionary value using dot notation."""
@@ -399,6 +424,18 @@ class AppConfig:
             "timeout": self._settings.sec_api.timeout,
             "max_retries": self._settings.sec_api.max_retries,
             "user_agent": self._settings.sec_api.user_agent,
+        }
+
+    def get_neo4j_config(self) -> dict[str, Any]:
+        """Get Neo4j configuration dict."""
+        return {
+            "uri": self._settings.neo4j.uri,
+            "user": self._settings.neo4j.user,
+            "password": self._settings.neo4j.password,
+            "database": self._settings.neo4j.database,
+            "max_connection_pool_size": self._settings.neo4j.max_connection_pool_size,
+            "connection_timeout": self._settings.neo4j.connection_timeout,
+            "max_transaction_retry_time": self._settings.neo4j.max_transaction_retry_time,
         }
 
     def validate(self) -> list[str]:

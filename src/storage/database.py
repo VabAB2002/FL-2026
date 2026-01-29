@@ -28,12 +28,13 @@ class Database:
     Thread-safe for read operations; write operations should be serialized.
     """
     
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(self, db_path: Optional[str] = None, read_only: bool = False) -> None:
         """
         Initialize database connection.
         
         Args:
             db_path: Path to DuckDB database file. If None, uses config.
+            read_only: If True, open in read-only mode (allows concurrent access).
         """
         settings = get_settings()
         self.db_path = get_absolute_path(
@@ -44,14 +45,15 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         
         self._connection: Optional[duckdb.DuckDBPyConnection] = None
+        self.read_only = read_only
         
-        logger.info(f"Database initialized: {self.db_path}")
+        logger.info(f"Database initialized: {self.db_path} (read_only={read_only})")
     
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
         """Get or create database connection."""
         if self._connection is None:
-            self._connection = duckdb.connect(str(self.db_path))
+            self._connection = duckdb.connect(str(self.db_path), read_only=self.read_only)
         return self._connection
     
     def close(self) -> None:

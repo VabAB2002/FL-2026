@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-FinLoom Master CLI - Enterprise Operations Command Center
+FinLoom CLI - Data Ingestion Operations
 
-Unified interface for all FinLoom operations.
+Core CLI for SEC data ingestion pipeline operations.
 
 Usage:
-    finloom status              # System health and statistics
-    finloom monitor start       # Start monitoring services
-    finloom quality check       # Run quality assessment
-    finloom backup create       # Create backup
-    finloom cache stats         # Cache statistics
-    finloom tracing enable      # Enable distributed tracing
+    finloom status              # System status and statistics
+    finloom config show         # Show configuration
+    finloom db detect-duplicates # Detect duplicate records
+    finloom recovery reprocess  # Reprocess failed extractions
 """
 
 import argparse
@@ -19,7 +17,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from tabulate import tabulate
 
 from src.storage.database import Database
 from src.utils.config import get_config
@@ -29,7 +26,7 @@ logger = get_logger("finloom.cli")
 
 
 class FinLoomCLI:
-    """Master CLI for FinLoom operations."""
+    """Core CLI for FinLoom data ingestion operations."""
     
     def __init__(self):
         """Initialize CLI."""
@@ -53,7 +50,7 @@ class FinLoomCLI:
             "Companies": self.db.connection.execute("SELECT COUNT(*) FROM companies").fetchone()[0],
             "Filings": self.db.connection.execute("SELECT COUNT(*) FROM filings WHERE xbrl_processed = TRUE").fetchone()[0],
             "Facts": self.db.connection.execute("SELECT COUNT(*) FROM facts").fetchone()[0],
-            "Normalized Metrics": self.db.connection.execute("SELECT COUNT(*) FROM normalized_financials").fetchone()[0],
+            "Markdown Files": self.db.connection.execute("SELECT COUNT(*) FROM filings WHERE full_markdown IS NOT NULL").fetchone()[0],
         }
         
         for key, value in stats.items():
@@ -70,320 +67,7 @@ class FinLoomCLI:
             print(f"  Database Size:................. ERROR: {e}")
         print()
         
-        # Feature flags
-        print("FEATURE FLAGS:")
-        flags = self.config.get_feature_flags()
-        for feature, enabled in flags.items():
-            status = "✅ ENABLED" if enabled else "⚠️  DISABLED"
-            print(f"  {feature:.<30} {status}")
         print()
-        
-        # Service health
-        print("SERVICE HEALTH:")
-        try:
-            from src.monitoring.health import get_health_checker
-            checker = get_health_checker()
-            
-            checks = {
-                "Database": checker.check_database(),
-                "SEC API": checker.check_sec_api(),
-                "Disk Space": checker.check_disk_space(),
-            }
-            
-            for service, status in checks.items():
-                icon = "✅" if status['status'] == 'healthy' else "⚠️"
-                print(f"  {icon} {service}")
-        except Exception as e:
-            print(f"  ⚠️  Health checks unavailable: {e}")
-        
-        print()
-        
-        # System Verification (if requested)
-        if hasattr(args, 'verify_integrity') and args.verify_integrity:
-            print("="*80)
-            print("  COMPREHENSIVE SYSTEM VERIFICATION")
-            print("="*80 + "\n")
-            
-            from src.monitoring.health_checker import DatabaseHealthChecker
-            
-            db_path = self.config.get('storage.database_path')
-            checker = DatabaseHealthChecker(db_path)
-            
-            try:
-                report = checker.verify_system_integrity()
-                
-                # Overall status
-                status_icon = {"healthy": "✅", "warning": "⚠️", "critical": "❌"}.get(report['status'], "❓")
-                print(f"System Status: {status_icon} {report['status'].upper()}\n")
-                
-                # Schema
-                if 'schema' in report:
-                    print("1. DATABASE SCHEMA")
-                    if report['schema']['missing_tables']:
-                        print(f"   ❌ Missing tables: {', '.join(report['schema']['missing_tables'])}")
-                    else:
-                        print(f"   ✅ All required tables present ({len(report['schema']['required_tables'])} tables)")
-                    print()
-                
-                # Extraction
-                if 'extraction' in report:
-                    ext = report['extraction']
-                    print("2. EXTRACTION PROGRESS")
-                    print(f"   Total filings:................ {ext['total_filings']:,}")
-                    print(f"   Processed:.................... {ext['processed_filings']:,} ({ext['processing_rate']:.1f}%)")
-                    print(f"   With sections:................ {ext['filings_with_sections']:,} ({ext['section_rate']:.1f}%)")
-                    print(f"   Total sections:............... {ext['total_sections']:,}")
-                    print(f"   Total tables:................. {ext['total_tables']:,}")
-                    print(f"   Total footnotes:.............. {ext['total_footnotes']:,}")
-                    print(f"   Total chunks:................. {ext['total_chunks']:,}")
-                    print()
-                
-                # Top companies
-                if 'top_companies' in report and report['top_companies']:
-                    print("3. TOP PROCESSED COMPANIES")
-                    for company in report['top_companies'][:5]:
-                        print(f"   {company['ticker']:6} {company['name'][:40]:40} {company['processed_filings']:3} filings")
-                    print()
-                
-                # Quality
-                if 'quality' in report and report['quality']:
-                    q = report['quality']
-                    print("4. QUALITY METRICS")
-                    print(f"   Average confidence:........... {q['avg_confidence']:.3f}")
-                    print(f"   Range:........................ {q['min_confidence']:.3f} - {q['max_confidence']:.3f}")
-                    print(f"   Scored sections:.............. {q['scored_sections']:,}")
-                    print()
-                
-                # Features
-                if 'features' in report and report['features']:
-                    f = report['features']
-                    print("5. METADATA FEATURES")
-                    print(f"   Sections with part labels:.... {f['sections_with_parts']:,} ({f['parts_rate']:.1f}%)")
-                    print(f"   Sections with tables:......... {f['sections_with_tables']:,} ({f['tables_rate']:.1f}%)")
-                    print(f"   Sections with lists:.......... {f['sections_with_lists']:,} ({f['lists_rate']:.1f}%)")
-                    print()
-                
-                # Chunking
-                if 'chunking' in report and report['chunking']:
-                    print("6. HIERARCHICAL CHUNKING")
-                    for chunk in report['chunking']:
-                        print(f"   Level {chunk['level']} ({chunk['name']:10}): {chunk['count']:,} chunks")
-                    print()
-                
-                # Database
-                if 'database' in report:
-                    db = report['database']
-                    print("7. DATABASE")
-                    print(f"   Size:......................... {db['size_mb']:.2f} MB")
-                    print(f"   Read-only:.................... {'Yes' if db['read_only'] else 'No'}")
-                    print()
-                
-                # Issues and warnings
-                if report.get('issues'):
-                    print("❌ ISSUES:")
-                    for issue in report['issues']:
-                        print(f"   • {issue}")
-                    print()
-                
-                if report.get('warnings'):
-                    print("⚠️  WARNINGS:")
-                    for warning in report['warnings']:
-                        print(f"   • {warning}")
-                    print()
-                
-                # Summary
-                print("="*80)
-                if report['status'] == 'healthy':
-                    print("✅ SYSTEM IS PRODUCTION READY")
-                elif report['status'] == 'warning':
-                    print("⚠️  SYSTEM HAS WARNINGS - Review above for details")
-                else:
-                    print("❌ SYSTEM HAS CRITICAL ISSUES - Fix required before production")
-                print("="*80)
-                print()
-                
-            except Exception as e:
-                print(f"❌ Verification failed: {e}")
-                import traceback
-                traceback.print_exc()
-                print()
-    
-    def cmd_monitor(self, args):
-        """Monitor operations."""
-        if args.action == 'start':
-            print("\n🚀 Starting monitoring services...")
-            print("\nStarting services in background:")
-            
-            # Start Prometheus metrics
-            if not args.no_metrics:
-                print("  • Prometheus metrics on http://localhost:9090/metrics")
-                try:
-                    subprocess.Popen(
-                        [sys.executable, "-c", "from src.monitoring import start_metrics_server; start_metrics_server()"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True
-                    )
-                except Exception as e:
-                    print(f"    ⚠️  Failed to start metrics server: {e}")
-            
-            # Start health checks
-            if not args.no_health:
-                print("  • Health checks on http://localhost:8000/health/detailed")
-                try:
-                    subprocess.Popen(
-                        [sys.executable, "-m", "src.monitoring.health"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True
-                    )
-                except Exception as e:
-                    print(f"    ⚠️  Failed to start health checks: {e}")
-            
-            print("\n✅ Monitoring services started!")
-            print("\nAccess:")
-            print("  Metrics:  http://localhost:9090/metrics")
-            print("  Health:   http://localhost:8000/health/detailed")
-            print()
-        
-        elif args.action == 'stop':
-            print("\n🛑 Stopping monitoring services...")
-            try:
-                subprocess.run(["pkill", "-f", "start_metrics_server"], check=False)
-                subprocess.run(["pkill", "-f", "src.monitoring.health"], check=False)
-                print("✅ Services stopped!\n")
-            except Exception as e:
-                print(f"⚠️  Error stopping services: {e}\n")
-        
-        elif args.action == 'status':
-            print("\n📊 Monitoring Status:")
-            # Check if processes are running
-            try:
-                result = subprocess.run(
-                    ["pgrep", "-f", "start_metrics_server"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                metrics_running = result.returncode == 0
-            except Exception:
-                metrics_running = False
-            
-            try:
-                result = subprocess.run(
-                    ["pgrep", "-f", "src.monitoring.health"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                health_running = result.returncode == 0
-            except Exception:
-                health_running = False
-            
-            print(f"  Metrics Server: {'✅ Running' if metrics_running else '⚠️  Stopped'}")
-            print(f"  Health Checks:  {'✅ Running' if health_running else '⚠️  Stopped'}")
-            print()
-    
-    def cmd_quality(self, args):
-        """Quality operations."""
-        from src.validation.reconciliation import ReconciliationEngine
-        from src.validation.quality_scorer import DataQualityScorer
-        
-        if args.action == 'check':
-            print("\n🔍 Running data quality checks...\n")
-            
-            engine = ReconciliationEngine(self.db)
-            results = engine.run_all_checks()
-            
-            print(f"Total Issues: {results['total_issues']}")
-            print(f"  Critical: {results['critical_issues']}")
-            print(f"  Errors: {results['error_issues']}")
-            print(f"  Warnings: {results['warning_issues']}")
-            
-            if results['total_issues'] == 0:
-                print("\n✅ No issues found - data quality is excellent!\n")
-            else:
-                print("\n⚠️  Issues detected. Run with --detail for more info.\n")
-        
-        elif args.action == 'score':
-            print("\n📊 Calculating quality scores...\n")
-            
-            scorer = DataQualityScorer(self.db)
-            results = scorer.score_all_companies()
-            
-            table_data = []
-            for result in results:
-                if result['filing_count'] > 0:
-                    table_data.append([
-                        result['ticker'],
-                        result['filing_count'],
-                        f"{result['average_score']:.1f}",
-                        f"{result['min_score']:.1f} - {result['max_score']:.1f}"
-                    ])
-            
-            print(tabulate(
-                table_data,
-                headers=["Ticker", "Filings", "Avg Score", "Range"],
-                tablefmt="grid"
-            ))
-            print()
-    
-    def cmd_backup(self, args):
-        """Backup operations."""
-        print(f"\n💾 Running {args.type} backup...\n")
-        
-        try:
-            if args.type == 'full':
-                subprocess.run([sys.executable, "scripts/backup_manager.py", "--full"], check=True)
-            elif args.type == 'incremental':
-                subprocess.run([sys.executable, "scripts/backup_manager.py", "--incremental"], check=True)
-            elif args.type == 'list':
-                subprocess.run([sys.executable, "scripts/backup_manager.py", "--list"], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"⚠️  Backup command failed with exit code {e.returncode}")
-        except Exception as e:
-            print(f"⚠️  Error running backup: {e}")
-    
-    def cmd_cache(self, args):
-        """Cache operations."""
-        try:
-            from src.caching.redis_cache import get_cache
-            cache = get_cache()
-            
-            if not cache.enabled:
-                print("\n⚠️  Redis cache is disabled\n")
-                return
-            
-            if args.action == 'stats':
-                print("\n📊 Cache Statistics:\n")
-                stats = cache.get_stats()
-                
-                for key, value in stats.items():
-                    print(f"  {key:.<30} {value}")
-                print()
-            
-            elif args.action == 'clear':
-                print("\n🗑️  Clearing cache...\n")
-                from src.caching.redis_cache import QueryCache
-                qcache = QueryCache(cache)
-                qcache.invalidate_all()
-                print("✅ Cache cleared!\n")
-        
-        except Exception as e:
-            print(f"\n⚠️  Cache error: {e}\n")
-    
-    def cmd_tracing(self, args):
-        """Tracing operations."""
-        if args.action == 'enable':
-            print("\n🔍 Enabling distributed tracing...")
-            os.environ['FINLOOM_TRACING_ENABLED'] = 'true'
-            print("✅ Tracing enabled!")
-            print("\nMake sure Jaeger is running:")
-            print("  docker run -d -p 6831:6831/udp -p 16686:16686 jaegertracing/all-in-one")
-            print("\nAccess UI: http://localhost:16686\n")
-        
-        elif args.action == 'disable':
-            print("\n🔍 Disabling distributed tracing...")
-            os.environ['FINLOOM_TRACING_ENABLED'] = 'false'
-            print("✅ Tracing disabled!\n")
     
     def cmd_config(self, args):
         """Configuration operations."""
@@ -419,32 +103,6 @@ class FinLoomCLI:
             else:
                 print("✅ Configuration is valid!\n")
     
-    def cmd_perf(self, args):
-        """Performance operations."""
-        if args.action == 'analyze':
-            print("\n📊 Performance Analysis:\n")
-            
-            # Query performance
-            import time
-            start = time.time()
-            self.db.connection.execute("SELECT COUNT(*) FROM facts").fetchone()
-            query_time = (time.time() - start) * 1000
-            
-            print(f"  Query Latency:................. {query_time:.2f}ms")
-            
-            # Database size
-            total_facts = self.db.connection.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
-            print(f"  Total Facts:................... {total_facts:,}")
-            
-            # Partitioning recommendation
-            from src.storage.partitioning import TablePartitioner
-            partitioner = TablePartitioner(self.db)
-            rec = partitioner.recommend_partitioning()
-            
-            print(f"\nPartitioning Recommendation:")
-            print(f"  Should Partition: {rec['should_partition']}")
-            print(f"  Reason: {rec['reason']}")
-            print()
     
     def cmd_db(self, args):
         """Database maintenance operations."""
@@ -627,7 +285,7 @@ def main():
         return 1
     
     parser = argparse.ArgumentParser(
-        description="FinLoom Enterprise Operations CLI",
+        description="FinLoom Data Ingestion CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
@@ -635,37 +293,10 @@ def main():
     
     # Status command
     status_parser = subparsers.add_parser('status', help='Show system status')
-    status_parser.add_argument('--verify-integrity', action='store_true', help='Run comprehensive system verification')
-    
-    # Monitor command
-    monitor_parser = subparsers.add_parser('monitor', help='Monitor operations')
-    monitor_parser.add_argument('action', choices=['start', 'stop', 'status'])
-    monitor_parser.add_argument('--no-metrics', action='store_true', help='Skip metrics server')
-    monitor_parser.add_argument('--no-health', action='store_true', help='Skip health checks')
-    
-    # Quality command
-    quality_parser = subparsers.add_parser('quality', help='Quality operations')
-    quality_parser.add_argument('action', choices=['check', 'score'])
-    
-    # Backup command
-    backup_parser = subparsers.add_parser('backup', help='Backup operations')
-    backup_parser.add_argument('type', choices=['full', 'incremental', 'list'])
-    
-    # Cache command
-    cache_parser = subparsers.add_parser('cache', help='Cache operations')
-    cache_parser.add_argument('action', choices=['stats', 'clear'])
-    
-    # Tracing command
-    tracing_parser = subparsers.add_parser('tracing', help='Tracing operations')
-    tracing_parser.add_argument('action', choices=['enable', 'disable'])
     
     # Config command
     config_parser = subparsers.add_parser('config', help='Configuration operations')
     config_parser.add_argument('action', choices=['show', 'validate'])
-    
-    # Performance command
-    perf_parser = subparsers.add_parser('perf', help='Performance operations')
-    perf_parser.add_argument('action', choices=['analyze'])
     
     # Recovery command
     recovery_parser = subparsers.add_parser('recovery', help='Recovery operations for failed extractions')
@@ -696,20 +327,8 @@ def main():
     try:
         if args.command == 'status':
             cli.cmd_status(args)
-        elif args.command == 'monitor':
-            cli.cmd_monitor(args)
-        elif args.command == 'quality':
-            cli.cmd_quality(args)
-        elif args.command == 'backup':
-            cli.cmd_backup(args)
-        elif args.command == 'cache':
-            cli.cmd_cache(args)
-        elif args.command == 'tracing':
-            cli.cmd_tracing(args)
         elif args.command == 'config':
             cli.cmd_config(args)
-        elif args.command == 'perf':
-            cli.cmd_perf(args)
         elif args.command == 'recovery':
             cli.cmd_recovery(args)
         elif args.command == 'db':

@@ -29,3 +29,8 @@ features:
   table_extraction: false
   sentiment_analysis: false
   caching_enabled: false
+
+neo4j:
+  uri: "bolt://localhost:7687"
+  max_connection_pool_size: 10  # Lower for dev
+  connection_timeout: 60  # Longer timeout for debugging

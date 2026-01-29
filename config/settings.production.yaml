@@ -32,3 +32,10 @@ features:
   table_extraction: false
   sentiment_analysis: false
   caching_enabled: true
+
+neo4j:
+  # URI should be set via NEO4J_URI env var for production
+  uri: "bolt://neo4j-prod:7687"
+  # Password MUST be set via NEO4J_PASSWORD env var
+  max_connection_pool_size: 100
+  connection_timeout: 30

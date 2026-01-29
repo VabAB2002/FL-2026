@@ -1,0 +1,51 @@
+# FinLoom Core Dependencies - Minimal Setup for Data Ingestion
+# ==============================================================
+
+# Core dependencies
+python-dotenv>=1.0.0              # Environment configuration
+pydantic>=2.5.0                   # Data validation
+pydantic-settings>=2.1.0          # Settings management
+pyyaml>=6.0.1                     # YAML config files
+
+# HTTP & API
+requests>=2.31.0                  # SEC API calls
+httpx>=0.26.0                     # Async HTTP (used by some modules)
+
+# HTML/XML Parsing
+beautifulsoup4>=4.12.0            # HTML parsing
+lxml>=5.1.0                       # XML parsing (required by BeautifulSoup & XBRL)
+
+# Database
+duckdb>=0.10.0                    # Local analytics database
+pyarrow>=15.0.0                   # Arrow format (DuckDB dependency)
+
+# SEC/XBRL specific
+arelle-release>=2.30.0            # XBRL parsing (Python 3.13 compatible)
+
+# Data processing
+pandas>=2.2.0                     # Data manipulation (used by database queries)
+
+# SEC EDGAR Markdown Conversion
+sec2md>=0.1.11                    # SEC EDGAR → Markdown converter (replaces vendored unstructured)
+
+# Graph Database
+neo4j>=5.15.0                     # Neo4j Python driver (Python 3.11-3.13 compatible)
+
+# Entity Extraction
+spacy>=3.7.0                      # NLP and NER
+en-core-web-trf>=3.7.0            # Transformer model for SpaCy (high accuracy)
+tqdm>=4.66.0                      # Progress bars
+python-dateutil>=2.8.0            # Date parsing for validation
+
+# LLM Extraction
+openai>=1.12.0                    # OpenAI client (also works with compatible APIs)
+anthropic>=0.18.0                 # Anthropic Claude client
+fuzzywuzzy>=0.18.0                # Fuzzy string matching for entity deduplication
+python-Levenshtein>=0.21.0        # Fast string matching (fuzzywuzzy backend)
+
+# Note: Vendored unstructured library removed - replaced with sec2md
+
+# Development tools (optional but recommended)
+pytest>=8.0.0
+black>=24.1.0
+ruff>=0.1.0

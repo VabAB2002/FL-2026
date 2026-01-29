@@ -63,6 +63,23 @@ CREATE INDEX IF NOT EXISTS idx_filings_filing_date ON filings(filing_date);
 CREATE INDEX IF NOT EXISTS idx_filings_period ON filings(period_of_report);
 CREATE INDEX IF NOT EXISTS idx_filings_status ON filings(download_status);
 
+-- Filing Sections: Structured section data extracted by sec2md
+CREATE TABLE IF NOT EXISTS filing_sections (
+    id INTEGER PRIMARY KEY,
+    accession_number VARCHAR NOT NULL,
+    item VARCHAR NOT NULL,              -- "1", "1A", "7", etc.
+    item_title VARCHAR,                 -- "Business", "Risk Factors"
+    markdown TEXT NOT NULL,
+    word_count INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (accession_number) REFERENCES filings(accession_number),
+    UNIQUE(accession_number, item)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sections_accession ON filing_sections(accession_number);
+CREATE INDEX IF NOT EXISTS idx_sections_item ON filing_sections(item);
+CREATE SEQUENCE IF NOT EXISTS filing_sections_id_seq START 1;
+
 -- Facts: XBRL financial data (star schema design)
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY,

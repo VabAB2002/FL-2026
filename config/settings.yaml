@@ -143,3 +143,14 @@ features:
   async_downloads: true
   section_extraction: true
   table_extraction: false
+
+# Neo4j Graph Database settings
+neo4j:
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  # Password should be set via NEO4J_PASSWORD env var
+  password: "finloom123"  # Default for development only
+  database: "neo4j"
+  max_connection_pool_size: 50
+  connection_timeout: 30
+  max_transaction_retry_time: 30
