@@ -9,8 +9,7 @@ Provides Neo4j integration with:
 - Type-safe models using Pydantic
 """
 
-from src.graph.community_detection import CommunityDetector
-from src.graph.neo4j_client import Neo4jClient
+from src.graph.graph_connector import Neo4jClient
 from src.graph.schema import (
     BusinessSegmentNode,
     CompanyNode,
@@ -22,7 +21,10 @@ from src.graph.schema import (
     RiskFactorNode,
     SectionNode,
 )
-from src.graph.summarization import CommunitySummarizer
+
+# Lazy imports for modules with heavy dependencies (graphdatascience, openai)
+# Use: from src.graph.find_communities import CommunityDetector
+# Use: from src.graph.summarization import CommunitySummarizer
 
 __all__ = [
     "Neo4jClient",

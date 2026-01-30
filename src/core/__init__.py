@@ -7,7 +7,7 @@ This module provides:
 
 Usage:
     from src.core import FinLoomError, ParsingError
-    from src.core.types import FormType, CIK
+    from src.core.base_types import FormType, CIK
 """
 
 from .exceptions import (
@@ -34,7 +34,7 @@ from .exceptions import (
     ValidationError,
     XBRLParsingError,
 )
-from .types import (
+from .base_types import (
     AccessionNumber,
     CIK,
     DateLike,

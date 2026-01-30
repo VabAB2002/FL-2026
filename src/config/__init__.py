@@ -1,13 +1,13 @@
 """
 Configuration module - Backward Compatibility Layer.
 
-DEPRECATED: This module is deprecated. Use src.utils.config instead.
+DEPRECATED: This module is deprecated. Use src.infrastructure.config instead.
 
-The primary configuration API is now in src.utils.config.
+The primary configuration API is now in src.infrastructure.config.
 This module provides backward-compatible imports for existing code.
 
 Preferred usage:
-    from src.utils.config import get_config
+    from src.infrastructure.config import get_config
     config = get_config()
 
 Legacy usage (still works but deprecated):
@@ -18,7 +18,7 @@ Legacy usage (still works but deprecated):
 import warnings
 
 # Import from unified config for backward compatibility
-from ..utils.config import (
+from ..infrastructure.config import (
     AppConfig,
     Environment,
     get_config,
@@ -29,7 +29,7 @@ from .env_config import EnvironmentConfig, get_env_config, is_development, is_pr
 
 # Emit deprecation warning when importing legacy functions
 warnings.warn(
-    "Importing from src.config is deprecated. Use 'from src.utils.config import get_config' instead.",
+    "Importing from src.config is deprecated. Use 'from src.infrastructure.config import get_config' instead.",
     DeprecationWarning,
     stacklevel=2
 )

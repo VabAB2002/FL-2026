@@ -13,8 +13,8 @@ from typing import Any
 
 from fuzzywuzzy import fuzz
 
-from src.graph.neo4j_client import Neo4jClient
-from src.utils.logger import get_logger
+from src.graph.graph_connector import Neo4jClient
+from src.infrastructure.logger import get_logger
 
 logger = get_logger("finloom.graph.graph_builder")
 

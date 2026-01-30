@@ -637,7 +637,7 @@ export FINLOOM_EXTRACT_ALL_FACTS=true
 
 ```python
 from src.parsers.xbrl_parser import XBRLParser
-from src.utils.config import get_settings
+from src.infrastructure.config import get_settings
 
 settings = get_settings()
 parser = XBRLParser(extract_all_facts=settings.extraction.extract_all_xbrl_facts)

@@ -1,10 +1,10 @@
 """
 Environment-specific configuration management.
 
-DEPRECATED: This module is deprecated. Use src.utils.config instead.
+DEPRECATED: This module is deprecated. Use src.infrastructure.config instead.
 
 Preferred usage:
-    from src.utils.config import get_config
+    from src.infrastructure.config import get_config
     config = get_config()
 
 This module is kept for backward compatibility only.
@@ -22,13 +22,13 @@ from dotenv import load_dotenv
 # Load .env file immediately
 load_dotenv()
 
-from ..utils.logger import get_logger
+from ..infrastructure.logger import get_logger
 
 logger = get_logger("finloom.config.env_config")
 
 # Deprecation warning
 warnings.warn(
-    "src.config.env_config is deprecated. Use src.utils.config instead.",
+    "src.config.env_config is deprecated. Use src.infrastructure.config instead.",
     DeprecationWarning,
     stacklevel=2
 )

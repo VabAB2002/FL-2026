@@ -29,6 +29,9 @@ logs/
 data/raw/
 data/database/*.duckdb*
 data/extracted_entities/*.json
+data/chunks/
+data/progress/
+data/community_summaries.json
 !data/.gitkeep
 
 # Environment
@@ -42,6 +45,7 @@ data/extracted_entities/*.json
 tmp/
 temp/
 *.tmp
+=*
 
 # OS
 Thumbs.db

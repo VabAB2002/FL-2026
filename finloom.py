@@ -19,8 +19,8 @@ import sys
 from pathlib import Path
 
 from src.storage.database import Database
-from src.utils.config import get_config
-from src.utils.logger import get_logger, setup_logging
+from src.infrastructure.config import get_config
+from src.infrastructure.logger import get_logger, setup_logging
 
 logger = get_logger("finloom.cli")
 
@@ -172,7 +172,7 @@ class FinLoomCLI:
     
     def cmd_recovery(self, args):
         """Recovery operations for failed extractions."""
-        from src.processing.unstructured_pipeline import UnstructuredDataPipeline
+        from src.documents.document_processor import UnstructuredDataPipeline
         
         if args.action == 'reprocess':
             print("\n🔄 Recovery: Reprocessing Failed Extractions\n")

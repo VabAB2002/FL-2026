@@ -14,8 +14,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.graph.neo4j_client import Neo4jClient
-from src.utils.logger import get_logger, setup_logging
+from src.graph.graph_connector import Neo4jClient
+from src.infrastructure.logger import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger("neo4j_init")

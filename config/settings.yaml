@@ -125,7 +125,7 @@ processing:
   batch_size: 100
   # Enable checkpointing for resume capability
   enable_checkpoints: true
-  checkpoint_path: "data/checkpoints"
+  checkpoint_path: "data/progress"
 
 # Logging settings
 logging:

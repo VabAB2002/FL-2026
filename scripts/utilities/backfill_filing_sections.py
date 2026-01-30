@@ -19,10 +19,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.extraction.section_extractor import SectionExtractor
-from src.extraction.llm_section_finder import LLMSectionFinder
+from src.readers.section_extractor import SectionExtractor
+from src.readers.ai_section_finder import LLMSectionFinder
 from src.storage.database import Database
-from src.utils.logger import get_logger, setup_logging
+from src.infrastructure.logger import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger("backfill")

@@ -6,9 +6,9 @@ Supports importing key financial concepts or all facts.
 
 from __future__ import annotations
 
-from src.graph.neo4j_client import Neo4jClient
+from src.graph.graph_connector import Neo4jClient
 from src.storage.database import Database
-from src.utils.logger import get_logger
+from src.infrastructure.logger import get_logger
 
 logger = get_logger("finloom.graph.xbrl_importer")
 

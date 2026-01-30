@@ -10,7 +10,7 @@ formatters:
     datefmt: "%Y-%m-%d %H:%M:%S"
   
   json:
-    class: src.utils.logger.JsonFormatter
+    class: src.infrastructure.logger.JsonFormatter
     format: "%(asctime)s %(name)s %(levelname)s %(message)s"
 
 handlers:
