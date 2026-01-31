@@ -7,7 +7,7 @@ from .keyword_search import KeywordSearch
 from .llm_pruning import LLMPruner
 from .passage_graph import PassageGraph
 from .pseudo_query_generator import PseudoQueryGenerator
-from .query_router import QueryRouter, QueryType, detect_companies
+from .query_router import DecomposedQuery, QueryRouter, QueryType, detect_companies
 from .reranker import Reranker
 from .vector_search import VectorSearch
 
@@ -19,6 +19,7 @@ __all__ = [
     "LLMPruner",
     "PassageGraph",
     "PseudoQueryGenerator",
+    "DecomposedQuery",
     "QueryRouter",
     "QueryType",
     "detect_companies",

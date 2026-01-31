@@ -55,7 +55,9 @@ _COMPLEX_WORDS = re.compile(
     r"\b(trend|over time|year-over-year|yoy|changed|growth|decline|"
     r"historically|evolution|trajectory|why|because|impact|effect|"
     r"caused by|led to|resulted in|driven by|attributed to|"
-    r"relationship between|correlation|how did .+ affect)\b",
+    r"relationship between|correlation|how did .+ affect|"
+    r"risks?|risk factors?|challenges?|threats?|strategies?|"
+    r"how does|how do|what factors)\b",
     re.IGNORECASE,
 )
 
@@ -94,6 +96,57 @@ class RoutingDecision:
     max_hops: int
     confidence: float
     reasoning: str
+
+
+@dataclass
+class DecomposedQuery:
+    """Result of query decomposition."""
+
+    original_query: str
+    query_type: QueryType
+    companies: list[str]
+    sub_queries: list[str]
+    synthesis_hint: str
+    reasoning: str
+
+
+DECOMPOSITION_PROMPT = (
+    "You decompose complex SEC filing analysis queries into simpler sub-queries.\n\n"
+    "Given a query and its classification, produce a JSON response with:\n"
+    "- sub_queries: list of 2-4 simpler, self-contained sub-queries that together answer the original\n"
+    "- synthesis_hint: one sentence describing how to combine the sub-query answers\n"
+    "- reasoning: brief explanation of why you decomposed it this way\n\n"
+    "Rules:\n"
+    "- Each sub-query should target ONE company and ONE aspect\n"
+    "- For cross-company comparisons, create parallel sub-queries (same question per company)\n"
+    "- For complex analysis, break into data-gathering queries and an analysis query\n"
+    "- Sub-queries should be answerable with SEC filing data\n"
+    "- Keep sub-queries concise (under 20 words each)\n"
+    "- For SIMPLE NUMERICAL comparisons (revenue, assets, etc.), use only 2 sub-queries "
+    "(one per company). Do NOT add extra sub-queries about definitions or methodology.\n\n"
+    "Example for CROSS_FILING:\n"
+    'Query: "Compare AMD and Intel supply chain risks"\n'
+    "{\n"
+    '  "sub_queries": [\n'
+    '    "What supply chain risks does AMD disclose in its 10-K risk factors?",\n'
+    '    "What supply chain risks does Intel disclose in its 10-K risk factors?",\n'
+    '    "What are AMD and Intel\'s key supply chain dependencies?"\n'
+    "  ],\n"
+    '  "synthesis_hint": "Compare the supply chain risks side-by-side, noting common and unique risks",\n'
+    '  "reasoning": "Split by company for parallel retrieval, added dependency query for depth"\n'
+    "}\n\n"
+    "Example for COMPLEX_ANALYSIS:\n"
+    'Query: "How did AMD\'s R&D spending relate to their revenue growth over time?"\n'
+    "{\n"
+    '  "sub_queries": [\n'
+    '    "What is AMD\'s R&D spending over the last 3 years?",\n'
+    '    "What is AMD\'s revenue trend over the last 3 years?",\n'
+    '    "How does AMD describe R&D investment strategy in their MD&A?"\n'
+    "  ],\n"
+    '  "synthesis_hint": "Correlate R&D spending with revenue numbers and use MD&A narrative to explain the relationship",\n'
+    '  "reasoning": "Separate numerical data gathering from qualitative analysis"\n'
+    "}"
+)
 
 
 def detect_companies(query: str) -> set[str]:
@@ -235,4 +288,65 @@ class QueryRouter:
                 max_hops=2,
                 confidence=0.5,
                 reasoning=f"LLM fallback failed: {e}",
+            )
+
+    def decompose(self, query: str, decision: RoutingDecision) -> DecomposedQuery:
+        """Decompose a complex query into sub-queries.
+
+        Only meaningful for COMPLEX_ANALYSIS and CROSS_FILING queries.
+        Returns empty sub_queries for SIMPLE_FACT (no LLM call).
+        """
+        companies = sorted(detect_companies(query))
+
+        if decision.query_type == QueryType.SIMPLE_FACT:
+            return DecomposedQuery(
+                original_query=query,
+                query_type=decision.query_type,
+                companies=companies,
+                sub_queries=[],
+                synthesis_hint="",
+                reasoning="Simple query — no decomposition needed",
+            )
+
+        try:
+            user_msg = (
+                f"Query type: {decision.query_type.value}\n"
+                f"Companies detected: {', '.join(companies) if companies else 'none specified'}\n"
+                f"Query: {query}"
+            )
+
+            response = self._get_client().chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": DECOMPOSITION_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0.0,
+                max_tokens=300,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(response.choices[0].message.content.strip())
+
+            sub_queries = data.get("sub_queries", [])
+            logger.info(
+                f"Decomposed '{query[:60]}...' into {len(sub_queries)} sub-queries"
+            )
+
+            return DecomposedQuery(
+                original_query=query,
+                query_type=decision.query_type,
+                companies=companies,
+                sub_queries=sub_queries,
+                synthesis_hint=data.get("synthesis_hint", ""),
+                reasoning=data.get("reasoning", "LLM decomposition"),
+            )
+        except Exception as e:
+            logger.warning(f"Decomposition failed: {e}, proceeding without")
+            return DecomposedQuery(
+                original_query=query,
+                query_type=decision.query_type,
+                companies=companies,
+                sub_queries=[],
+                synthesis_hint="",
+                reasoning=f"Decomposition failed: {e}",
             )

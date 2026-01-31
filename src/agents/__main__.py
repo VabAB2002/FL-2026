@@ -57,17 +57,26 @@ def main() -> int:
 
         result = agent.query(args.query)
 
-        if args.verbose and result["steps"]:
-            print("Reasoning Steps:")
-            print("-" * 80)
-            for i, step in enumerate(result["steps"], 1):
-                if step["type"] == "action":
-                    print(f"\n  [{i}] TOOL: {step['tool']}")
-                    print(f"      Args: {step['args']}")
-                else:
-                    print(f"\n  [{i}] OBSERVATION:")
-                    print(f"      {step['content']}")
-            print("\n" + "=" * 80)
+        if args.verbose:
+            if result.get("query_type"):
+                print(f"Query Type: {result['query_type']}")
+            if result.get("sub_queries"):
+                print("Sub-queries:")
+                for i, sq in enumerate(result["sub_queries"], 1):
+                    print(f"  {i}. {sq}")
+                print()
+
+            if result["steps"]:
+                print("Reasoning Steps:")
+                print("-" * 80)
+                for i, step in enumerate(result["steps"], 1):
+                    if step["type"] == "action":
+                        print(f"\n  [{i}] TOOL: {step['tool']}")
+                        print(f"      Args: {step['args']}")
+                    else:
+                        print(f"\n  [{i}] OBSERVATION:")
+                        print(f"      {step['content']}")
+                print("\n" + "=" * 80)
 
         print("\nAnswer:")
         print("-" * 80)
