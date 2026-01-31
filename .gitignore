@@ -32,6 +32,7 @@ data/extracted_entities/*.json
 data/chunks/
 data/progress/
 data/community_summaries.json
+data/passage_graph.pkl
 !data/.gitkeep
 
 # Environment
