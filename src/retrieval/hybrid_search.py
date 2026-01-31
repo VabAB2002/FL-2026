@@ -182,6 +182,7 @@ class HybridRetriever:
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
         keyword_boost_threshold: int = 3,
+        ticker: str | None = ...,
     ) -> list[dict[str, Any]]:
         """
         Retrieve relevant documents using hybrid search.
@@ -192,6 +193,9 @@ class HybridRetriever:
             vector_weight: Weight for vector search results
             keyword_weight: Weight for keyword search results
             keyword_boost_threshold: Boost keyword results if query has N+ words
+            ticker: Explicit ticker filter. Pass a ticker string to scope
+                results to that company, None to disable filtering, or omit
+                (default sentinel) to auto-detect from the query.
 
         Returns:
             Ranked list of documents with content, score, and metadata
@@ -199,7 +203,8 @@ class HybridRetriever:
         logger.info(f"Hybrid search: '{query}' (top_k={top_k})")
 
         # Detect company ticker for scoped filtering
-        ticker = self._resolve_ticker(query)
+        if ticker is ...:
+            ticker = self._resolve_ticker(query)
         if ticker:
             logger.info(f"Company filter active: {ticker}")
 

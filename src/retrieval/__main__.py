@@ -26,6 +26,10 @@ def main():
     parser.add_argument(
         "--no-rerank", action="store_true", help="Disable Cohere reranking"
     )
+    parser.add_argument(
+        "--hoprag", action="store_true",
+        help="Use HopRAG multi-hop retrieval instead of hybrid search",
+    )
 
     args = parser.parse_args()
 
@@ -38,9 +42,14 @@ def main():
         logger.warning("COHERE_API_KEY not set, disabling reranking")
         args.no_rerank = True
 
-    # Initialize retriever
-    logger.info("Initializing hybrid retriever...")
-    retriever = HybridRetriever(use_reranking=not args.no_rerank)
+    if args.hoprag:
+        from src.retrieval.hoprag_retriever import create_hoprag_retriever
+
+        logger.info("Initializing HopRAG retriever...")
+        retriever = create_hoprag_retriever(use_reranking=not args.no_rerank)
+    else:
+        logger.info("Initializing hybrid retriever...")
+        retriever = HybridRetriever(use_reranking=not args.no_rerank)
 
     # Search
     logger.info(f"\nQuery: {args.query}\n")
@@ -58,7 +67,11 @@ def main():
         section_title = meta.get("section_title", "N/A")
         logger.info(f"Section: {section_item} - {section_title}")
         sources = meta.get("sources", [meta.get("source", "unknown")])
-        logger.info(f"Sources: {', '.join(sources)}")
+        logger.info(f"Sources: {', '.join(str(s) for s in sources)}")
+        hop = meta.get("hop_number")
+        edge = meta.get("edge_type")
+        if hop is not None:
+            logger.info(f"Hop: {hop}" + (f" (via {edge})" if edge else ""))
         logger.info(f"Content: {result['content'][:200]}...")
         logger.info("")
 
