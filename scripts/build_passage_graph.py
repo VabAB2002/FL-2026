@@ -171,8 +171,9 @@ def build_pseudo_query_edges(
                 results = vector_store.search(query_vector, limit=5)
                 for r in results:
                     target_id = r["payload"].get("chunk_id", "")
-                    if target_id and target_id != chunk_id:
-                        results_list.append((target_id, r["score"]))
+                    score = r["score"]
+                    if target_id and target_id != chunk_id and score >= 0.60:
+                        results_list.append((target_id, score))
             except Exception as e:
                 logger.warning(f"Vector search failed for chunk {chunk_id}: {e}")
         return chunk_id, results_list
@@ -268,6 +269,8 @@ def main() -> int:
             concurrency=args.concurrency,
         )
         local_stats["pseudo_query"] = pseudo_count
+        removed = graph.prune_pseudo_query_edges(max_per_node=10)
+        local_stats["pseudo_query_pruned"] = removed
         graph.save(args.output)
 
     # Report

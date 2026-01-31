@@ -275,16 +275,22 @@ class PassageGraph:
         return edge_count
 
     def add_pseudo_query_edges(
-        self, chunk_id: str, target_chunk_ids: list[str], scores: list[float]
+        self,
+        chunk_id: str,
+        target_chunk_ids: list[str],
+        scores: list[float],
+        min_score: float = 0.60,
     ) -> int:
         """
         Add pseudo-query edges for a single source chunk.
 
         Called by the batch script after LLM + vector search.
-        Skips self-loops and already-existing edges.
+        Skips self-loops, already-existing edges, and low-similarity results.
         """
         added = 0
         for target_id, score in zip(target_chunk_ids, scores):
+            if score < min_score:
+                continue
             if target_id == chunk_id:
                 continue
             if target_id not in self._chunk_meta:
@@ -296,6 +302,46 @@ class PassageGraph:
                 )
                 added += 1
         return added
+
+    def prune_pseudo_query_edges(self, max_per_node: int = 10) -> int:
+        """
+        Keep only the top-K strongest pseudo-query edges per node.
+
+        Prevents hub nodes from dominating the graph. Removes weaker
+        pseudo-query edges while preserving all local edge types.
+
+        Returns number of edges removed.
+        """
+        # Collect pseudo-query edges per node, sorted by weight
+        node_edges: dict[str, list[tuple[str, str, float]]] = defaultdict(list)
+        for u, v, d in self.graph.edges(data=True):
+            if d.get("type") == "pseudo_query":
+                w = d.get("weight", 0)
+                node_edges[u].append((u, v, w))
+                node_edges[v].append((v, u, w))
+
+        # Determine which edges each node wants to keep (top-K by weight)
+        edges_to_keep: set[tuple[str, str]] = set()
+        for node, edges in node_edges.items():
+            edges.sort(key=lambda x: x[2], reverse=True)
+            for src, tgt, _ in edges[:max_per_node]:
+                edges_to_keep.add(tuple(sorted([src, tgt])))
+
+        # Remove pseudo-query edges not in any node's top-K
+        to_remove = []
+        for u, v, d in self.graph.edges(data=True):
+            if d.get("type") != "pseudo_query":
+                continue
+            edge_key = tuple(sorted([u, v]))
+            if edge_key not in edges_to_keep:
+                to_remove.append((u, v))
+
+        self.graph.remove_edges_from(to_remove)
+        logger.info(
+            f"Pruned {len(to_remove):,} weak pseudo-query edges "
+            f"(kept top-{max_per_node} per node)"
+        )
+        return len(to_remove)
 
     def save(self, path: Path | None = None) -> None:
         """Save graph as pickle."""
